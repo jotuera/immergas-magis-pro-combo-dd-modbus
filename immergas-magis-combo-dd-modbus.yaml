@@ -1,0 +1,4394 @@
+# Immergas Magis Combo - Dominus / zone-panel emulator on the D+/D- Modbus bus (ESPHome, M5Stack Atom)
+#
+# Emulates the Immergas Dominus remote (0x33) and/or zone panels (0x29 / 0x2A / 0x2B) so a Magis Combo
+# boiler can be controlled from Home Assistant without the proprietary Dominus. The boiler is the Modbus
+# master; this device is a slave (9600 8E1). Feeds room temperature/humidity from HA sensors and exposes
+# setpoints, weekly schedules, operating mode and boiler faults. See README.md for wiring, the register
+# map and setup.
+#
+# Project : jotuera.immergas-magis-combo-dd-modbus  |  v1.0.0
+# Repo    : https://github.com/jotuera/immergas-magis-combo-dd-modbus
+# License : MIT (c) 2026 JoTu
+# Tested  : Magis Combo V2 (MPROCOMBOV2). Other Immergas engines use different register maps - untested.
+
+substitutions:
+  # v64 HYBRID: 4 temp/humidity sources for the emulated panel 0x29 (Basement/Ground/Upper/House).
+  # Pick the active source with a dropdown in HA. Default = Upper floor (3). Put your own entity_id.
+  # v101: 5 sources for Zone 1: 1=Panel (REAL PDU 2005/2006 of the physical panel 0x29 - NOT from HA),
+  # 2=Basement, 3=Ground floor, 4=Upper floor, 5=Whole house. Default Upper floor (idx 4). Sources 2-5 = HA entities:
+  temp_src_2: sensor.srednia_temperatura_piwnica
+  temp_src_3: input_number.srednia_temepratura_parter
+  temp_src_4: sensor.srednia_temperatura_pietro
+  temp_src_5: sensor.srednia_temperatura_dom
+  hum_src_2: sensor.srednia_wilgotnosc_piwnica
+  hum_src_3: sensor.srednia_wilgotnosc_parter
+  hum_src_4: sensor.srednia_wilgotnosc_pietro
+  hum_src_5: sensor.srednia_wilgotnosc_dom
+  # v94: temp/humidity sources for Zone 2 and 3 (placeholder - put your own entity_id).
+  # v101: temp/humidity sources for Zone 2/3. Slot 1 "Panel" = REAL PDU 2005/2006 of the physical panel
+  # 0x2A/0x2B (not from HA); slots 2-5 = HA entities (put your own entity_id, dropdown picks the active one).
+  temp_src_z2_2: sensor.temperatura_strefa_2_2
+  temp_src_z2_3: sensor.temperatura_strefa_2_3
+  temp_src_z2_4: sensor.temperatura_strefa_2_4
+  hum_src_z2_2: sensor.wilgotnosc_strefa_2_2
+  hum_src_z2_3: sensor.wilgotnosc_strefa_2_3
+  hum_src_z2_4: sensor.wilgotnosc_strefa_2_4
+  temp_src_z3_2: sensor.temperatura_strefa_3_2
+  temp_src_z3_3: sensor.temperatura_strefa_3_3
+  temp_src_z3_4: sensor.temperatura_strefa_3_4
+  hum_src_z3_2: sensor.wilgotnosc_strefa_3_2
+  hum_src_z3_3: sensor.wilgotnosc_strefa_3_3
+  hum_src_z3_4: sensor.wilgotnosc_strefa_3_4
+  temp_src_z2_5: sensor.temperatura_strefa_2_5
+  hum_src_z2_5: sensor.wilgotnosc_strefa_2_5
+  temp_src_z3_5: sensor.temperatura_strefa_3_5
+  hum_src_z3_5: sensor.wilgotnosc_strefa_3_5
+
+  # v110: project metadata (author / GitHub repo). After publishing, set the correct repo URL.
+  author: "JoTu"
+  github_url: "https://github.com/jotuera/immergas-magis-combo-dd-modbus"
+  project_version: "1.0.0"
+
+esphome:
+  name: immergas-dd-atom
+  friendly_name: Immergas D+D- Atom
+  comment: "Immergas Dominus/Panel (D+/D-) emulator | author: ${author} | ${github_url}"
+  project:
+    name: "jotuera.immergas-magis-combo-dd-modbus"
+    version: "${project_version}"
+  on_boot:
+    priority: 800
+    then:
+      - lambda: |-
+          // v48: normalna polaryzacja DE/RE.
+          // LOW = RX/idle, HIGH = TX.
+          gpio_set_direction(GPIO_NUM_23, GPIO_MODE_OUTPUT);
+          gpio_set_level(GPIO_NUM_23, 0);
+          ESP_LOGW("dd_rs485", "v75 RS485 DE GPIO23 LOW idle; Dominus 0x33 + panel 0x29 + termostaty + chrono S1 (selekty dni) + bledy + faza S1 + status (no-RAW lean) v113 keepalive ready");
+
+esp32:
+  board: m5stack-atom
+  framework:
+    type: esp-idf
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  # v79: do NOT reboot the ESP when WiFi drops - bus emulation must run independently of the network.
+  reboot_timeout: 0s
+  # Optional static IP (default: DHCP). Uncomment and set to YOUR network:
+  # manual_ip:
+  #   static_ip: 192.168.1.42
+  #   gateway: 192.168.1.1
+  #   subnet: 255.255.255.0
+
+# v79: do NOT reboot the ESP when HA crashes/disconnects (default 15 min -> boiler raised E142/E121
+# while HA was down). The emulator keeps serving the bus with last-known values regardless of HA.
+api:
+  reboot_timeout: 0s
+
+ota:
+  - platform: esphome
+
+logger:
+  level: DEBUG
+  baud_rate: 0
+
+# v111: lokalny panel WWW (fallback gdy HA niedostepny; local:true = assety wbudowane, bez internetu).
+web_server:
+  port: 80
+  version: 3
+  log: false
+  local: true
+  # v112: protect the web UI (this device controls the boiler). Add web_username/web_password to secrets.yaml.
+  auth:
+    username: !secret web_username
+    password: !secret web_password
+
+uart:
+  id: dd_uart
+  tx_pin: GPIO26
+  rx_pin: GPIO32
+  baud_rate: 9600
+  data_bits: 8
+  parity: EVEN
+  stop_bits: 1
+  rx_buffer_size: 1024
+
+globals:
+  # ------------------------------------------------------------
+  # v62: room temperature/humidity from HA (for the emulated panel 0x29).
+  # int: temp x10 (215 = 21.5C), humidity in % (50). Unavailable -> last known value.
+  # ------------------------------------------------------------
+  # v71: boiler fault monitoring. dd_err_code = last PDU 2100 (0=no fault),
+  # dd_err_2101 = last PDU 2101 (reset/flags). Captured in handle_pdu from the bus.
+  - id: dd_err_code
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: dd_err_2101
+    type: int
+    restore_value: no
+    initial_value: '0'
+  # v73: Zone 1 status (PDU 2010, LB flag8). bit6=Comfort, bit7=Eco, bit2=Manual, bit3=heat request.
+  - id: dd_zone1_status_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+  # v96: status/phase for Zone 2 and 3 (mirror of 2010). Placeholder - the boiler writes zone 2/3 status only
+  # in a multi-zone setup (A13). With no source it stays 0 -> the phase shows "—".
+  - id: dd_zone2_status_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: dd_zone3_status_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: ha_room_temp_raw
+    type: int
+    restore_value: yes
+    initial_value: '210'
+
+  - id: ha_room_humidity_raw
+    type: int
+    restore_value: yes
+    initial_value: '50'
+
+  # v94: temp/humidity for Zone 2 and 3 (from HA, for emulating panels 0x2A/0x2B). Placeholders.
+  - id: ha_room_temp_2_raw
+    type: int
+    restore_value: yes
+    initial_value: '210'
+  - id: ha_room_temp_3_raw
+    type: int
+    restore_value: yes
+    initial_value: '210'
+  - id: ha_room_humidity_2_raw
+    type: int
+    restore_value: yes
+    initial_value: '50'
+  - id: ha_room_humidity_3_raw
+    type: int
+    restore_value: yes
+    initial_value: '50'
+
+  # v63: buffers for 3 sources + index of the selected source (1-3). ha_room_*_raw = selected (read by emu29).
+  - id: ha_temp_raw_1
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_temp_raw_2
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_temp_raw_3
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_temp_raw_4
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_temp_raw_5
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_hum_raw_1
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_hum_raw_2
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_hum_raw_3
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_hum_raw_4
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_hum_raw_5
+    type: int
+    restore_value: no
+    initial_value: '50'
+  # v100: restore_value: no -> after reboot returns to source 4 (Upper floor), consistent with the select's initial_option.
+  - id: temp_src_idx
+    type: int
+    restore_value: no
+    initial_value: '4'
+  - id: hum_src_idx
+    type: int
+    restore_value: no
+    initial_value: '4'
+
+  # v99: buffers for 4 temp/humidity sources of Zone 2 and 3 + active source index (1-4, restore:no -> after
+  # reboot source 1). ha_room_temp/humidity_2/3_raw = selected (read by emu_zone_value for 0x2A/0x2B).
+  - id: ha_temp_raw_z2_1
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_temp_raw_z2_2
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_temp_raw_z2_3
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_temp_raw_z2_4
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_hum_raw_z2_1
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_hum_raw_z2_2
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_hum_raw_z2_3
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_hum_raw_z2_4
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_temp_raw_z3_1
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_temp_raw_z3_2
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_temp_raw_z3_3
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_temp_raw_z3_4
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_hum_raw_z3_1
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_hum_raw_z3_2
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_hum_raw_z3_3
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_hum_raw_z3_4
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_temp_raw_z2_5
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_hum_raw_z2_5
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_temp_raw_z3_5
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_hum_raw_z3_5
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: temp_src_z2_idx
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: hum_src_z2_idx
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: temp_src_z3_idx
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: hum_src_z3_idx
+    type: int
+    restore_value: no
+    initial_value: '1'
+
+  # ------------------------------------------------------------
+  # Bus / control
+  # ------------------------------------------------------------
+  - id: dd_last_rx_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: dd_last_tx_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: dd_last_crc_bad_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: dd_enable_replies
+    type: bool
+    restore_value: yes
+    initial_value: 'true'
+
+  # Diagnostic switches left from the old emulation.
+  # In this version they do NOT enable bus replies, to avoid triggering E121/E142.
+  - id: dd_emulate_29_diag
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+  - id: dd_emulate_33_diag
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+  # v85: emulation flags for the Zone 2 (0x2A/42) and Zone 3 (0x2B/43) panels. NOTE: flags only -
+  # backend serwowania rejestrow 0x2A/0x2B jeszcze NIE istnieje (do zrobienia jak dla 0x29).
+  - id: dd_emulate_2a_diag
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+  - id: dd_emulate_2b_diag
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+  # v66: time of the last READ (33 03 / 29 03) by the boiler = "online" signal (the boiler reads us).
+  - id: dd_last_33_read_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: dd_last_29_read_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: dd_last_2a_read_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: dd_last_2b_read_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  # v94: last 0x1E activity (addr 30, machine room ALWAYS present) = "Modbus connection" (bus alive).
+  - id: dd_last_1e_read_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  # ------------------------------------------------------------
+  # Main Zone 1 / DHW values
+  # ------------------------------------------------------------
+  - id: cwu_setpoint_raw
+    type: int
+    restore_value: yes
+    initial_value: '500'
+
+  - id: dhw_temp_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: outside_temp_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: zone1_temp_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: zone1_setpoint_raw
+    type: int
+    restore_value: yes
+    initial_value: '210'
+
+  - id: zone1_offset_raw
+    type: int
+    restore_value: yes
+    initial_value: '20'
+
+  # v96: CH setpoint + offset for Zone 2 and 3 (placeholders - 0x2A/0x2B serving backend TBD).
+  - id: zone2_setpoint_raw
+    type: int
+    restore_value: yes
+    initial_value: '210'
+  - id: zone3_setpoint_raw
+    type: int
+    restore_value: yes
+    initial_value: '210'
+  - id: zone2_offset_raw
+    type: int
+    restore_value: yes
+    initial_value: '20'
+  - id: zone3_offset_raw
+    type: int
+    restore_value: yes
+    initial_value: '20'
+
+  - id: operating_mode_raw
+    type: int
+    restore_value: yes
+    initial_value: '3'
+
+  - id: operating_mode_target_raw
+    type: int
+    restore_value: yes
+    initial_value: '3'
+
+  # v57 MODE CONTROL: separates the requested mode (operating_mode_raw, returned on READ 2000)
+  # from the reported mode (what the boiler WRITES BACK on 2000 - display only).
+  - id: operating_mode_reported
+    type: int
+    restore_value: no
+    initial_value: '3'
+
+  # Until the user picks a mode in HA, the emulator MIRRORS the boiler's mode (state adoption,
+  # no forcing at startup). After a choice, the emulator dictates the requested mode.
+  - id: mode_user_set
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+  # ------------------------------------------------------------
+  # Dominus / Zone 1 - "Manage Zone" screen
+  # ------------------------------------------------------------
+  - id: dominus_comfort_heat_raw
+    type: int
+    restore_value: yes
+    initial_value: '240'
+
+  - id: dominus_eco_heat_raw
+    type: int
+    restore_value: yes
+    initial_value: '200'
+
+  - id: dominus_comfort_cool_raw
+    type: int
+    restore_value: yes
+    initial_value: '230'
+
+  - id: dominus_eco_cool_raw
+    type: int
+    restore_value: yes
+    initial_value: '250'
+
+  - id: dominus_humidity_raw
+    type: int
+    restore_value: yes
+    initial_value: '51'
+
+  - id: dominus_set_flow_raw
+    type: int
+    restore_value: yes
+    initial_value: '300'
+
+  # v102: "Manage Zone" settings for Zone 2 (0x2A) and 3 (0x2B) - served per-address in emu_zone_value.
+  - id: dominus_comfort_heat_z2_raw
+    type: int
+    restore_value: yes
+    initial_value: '240'
+
+  - id: dominus_eco_heat_z2_raw
+    type: int
+    restore_value: yes
+    initial_value: '200'
+
+  - id: dominus_comfort_cool_z2_raw
+    type: int
+    restore_value: yes
+    initial_value: '230'
+
+  - id: dominus_eco_cool_z2_raw
+    type: int
+    restore_value: yes
+    initial_value: '250'
+
+  - id: dominus_humidity_z2_raw
+    type: int
+    restore_value: yes
+    initial_value: '51'
+
+  - id: dominus_set_flow_z2_raw
+    type: int
+    restore_value: yes
+    initial_value: '300'
+
+  - id: dominus_comfort_heat_z3_raw
+    type: int
+    restore_value: yes
+    initial_value: '240'
+
+  - id: dominus_eco_heat_z3_raw
+    type: int
+    restore_value: yes
+    initial_value: '200'
+
+  - id: dominus_comfort_cool_z3_raw
+    type: int
+    restore_value: yes
+    initial_value: '230'
+
+  - id: dominus_eco_cool_z3_raw
+    type: int
+    restore_value: yes
+    initial_value: '250'
+
+  - id: dominus_humidity_z3_raw
+    type: int
+    restore_value: yes
+    initial_value: '51'
+
+  - id: dominus_set_flow_z3_raw
+    type: int
+    restore_value: yes
+    initial_value: '300'
+
+  # ------------------------------------------------------------
+  # Dodatkowe 0x29 - diagnostyczne/kandydaci
+  # ------------------------------------------------------------
+  - id: pdu_29_2006_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  # 2300/2302/2303 look like the Dominus/Zone controller time/date.
+  # 2300 zostawiamy jako surowy licznik/scheduler, bez wymuszonej interpretacji.
+  - id: pdu_29_2300_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: pdu_29_2302_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: pdu_29_2303_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: pdu_29_2293_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: pdu_29_3011_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: pdu_29_3012_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: pdu_29_3013_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: pdu_29_3014_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: pdu_29_3031_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: pdu_29_3042_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+  # v92: panel firmware version for Zone 2/3 (0x2A/0x2B reg 3042) - placeholders (no data without zones 2/3).
+  - id: pdu_2a_version_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: pdu_2b_version_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  # ------------------------------------------------------------
+  # v21 emulator 0x29 / 41 - liczniki i status
+  # ------------------------------------------------------------
+  - id: dd_emu_29_read_count
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: dd_emu_29_write_count
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: dd_emu_29_last_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: dd_emu_29_auto_tx_count
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: dd_emu_29_auto_tx_last_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  # ------------------------------------------------------------
+  # v48 emulator Dominus 0x33 / 51 - liczniki i status
+  # ------------------------------------------------------------
+  - id: dd_emu_33_probe_count
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: dd_emu_33_ack_count
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: dd_emu_33_last_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+switch:
+  # v100: removed the 4 "Chrono: profile Cal 1..4" switches - misleading "activation" (in the app none of the 4
+  # calendar is the main one; just assign a profile to each day with the CO selects below +
+  # shortcut "all days -> profile"). Profile editors (datetime cal1-4) and day selects stay.
+
+  # v68: "Discovery of new PDUs" removed - diagnostics belong to the sniffer (immergas-dd-sniffer v47).
+  # v68: "Active commands" removed - old active write disabled since v57 (slave model).
+  - platform: template
+    name: "Immergas - Emulate Modbus"
+    id: enable_replies_switch
+    icon: mdi:lan-connect
+    entity_category: diagnostic
+    restore_mode: RESTORE_DEFAULT_ON
+    lambda: |-
+      return id(dd_enable_replies);
+    turn_on_action:
+      - lambda: |-
+          id(dd_enable_replies) = true;
+          ESP_LOGW("dd_mode", "Polaczenie Modbus ON - pelny RX+TX na magistrali (dekodowanie + odpowiedzi).");
+    turn_off_action:
+      - lambda: |-
+          id(dd_enable_replies) = false;
+          // v104: "Emulate Modbus" is the MASTER - OFF disables all emulation (Dominus + zone panels).
+          id(dd_emulate_33_diag) = false;
+          id(dd_emulate_29_diag) = false;
+          id(dd_emulate_2a_diag) = false;
+          id(dd_emulate_2b_diag) = false;
+          id(dd_emulate_33_switch).publish_state(false);
+          id(dd_emulate_29_switch).publish_state(false);
+          id(dd_emulate_2a_switch).publish_state(false);
+          id(dd_emulate_2b_switch).publish_state(false);
+          id(dd_last_33_read_ms) = 0;
+          id(dd_last_29_read_ms) = 0;
+          id(dd_last_2a_read_ms) = 0;
+          id(dd_last_2b_read_ms) = 0;
+          ESP_LOGW("dd_mode", "Emuluj Modbus OFF (master) - RX+TX off + zgaszone Dominus i panele stref 1/2/3.");
+
+  # v90: two separate, MUTUALLY EXCLUSIVE emulation switches (emulate EITHER the Dominus OR
+  # a panel - never both, since one is physical). Enabling one disables the other. Default: Dominus ON,
+  # Zone 1 Panel OFF. "Modbus connection" is the master gate (default ON).
+  - platform: template
+    name: "Immergas - Emulate Dominus"
+    id: dd_emulate_33_switch
+    icon: mdi:robot-industrial
+    entity_category: diagnostic
+    restore_mode: RESTORE_DEFAULT_ON
+    lambda: |-
+      return id(dd_emulate_33_diag);
+    turn_on_action:
+      - lambda: |-
+          // v107 SAFETY: a physical device answers on 0x33 (connected) -> do NOT enable emulation
+          // (two devices on the same address = bus collision).
+          if (id(dd_last_33_read_ms) != 0 && (millis() - id(dd_last_33_read_ms)) < 30000) {
+            ESP_LOGE("dd_mode", "BEZPIECZNIK: fizyczny Dominus 0x33 wykryty (polaczono) - NIE wlaczam emulacji.");
+            id(dd_emulate_33_diag) = false;
+            id(dd_emulate_33_switch).publish_state(false);
+            return;
+          }
+          id(dd_emulate_33_diag) = true;
+          id(dd_emulate_29_diag) = false;
+          id(dd_emulate_2a_diag) = false;
+          id(dd_emulate_2b_diag) = false;
+          ESP_LOGW("dd_mode", "Emuluj DOMINUS 0x33 ON (panele OFF - wykluczenie)");
+    turn_off_action:
+      - lambda: |-
+          id(dd_emulate_33_diag) = false;
+          id(dd_last_33_read_ms) = 0;  // v107: reset -> "Connection" counts only physical replies from now on
+          ESP_LOGW("dd_mode", "Emuluj Dominus 0x33 OFF");
+
+  - platform: template
+    name: "Immergas - Emulate Panel Zone 1"
+    id: dd_emulate_29_switch
+    icon: mdi:robot
+    entity_category: diagnostic
+    restore_mode: RESTORE_DEFAULT_OFF
+    lambda: |-
+      return id(dd_emulate_29_diag);
+    turn_on_action:
+      - lambda: |-
+          // v107 SAFETY: a physical device answers on 0x29 (connected) -> do NOT enable emulation
+          // (two devices on the same address = bus collision).
+          if (id(dd_last_29_read_ms) != 0 && (millis() - id(dd_last_29_read_ms)) < 30000) {
+            ESP_LOGE("dd_mode", "BEZPIECZNIK: fizyczny panel Strefy 1 0x29 wykryty (polaczono) - NIE wlaczam emulacji.");
+            id(dd_emulate_29_diag) = false;
+            id(dd_emulate_29_switch).publish_state(false);
+            return;
+          }
+          id(dd_emulate_29_diag) = true;
+          id(dd_emulate_33_diag) = false;
+          ESP_LOGW("dd_mode", "Emuluj PANEL Strefy 1 0x29 ON (Dominus OFF - wykluczenie)");
+    turn_off_action:
+      - lambda: |-
+          id(dd_emulate_29_diag) = false;
+          id(dd_last_29_read_ms) = 0;  // v107: reset polaczenia
+          ESP_LOGW("dd_mode", "Emuluj Panel Strefy 1 0x29 OFF");
+
+  - platform: template
+    name: "Immergas - Emulate Panel Zone 2"
+    id: dd_emulate_2a_switch
+    icon: mdi:robot
+    entity_category: diagnostic
+    restore_mode: RESTORE_DEFAULT_OFF
+    lambda: |-
+      return id(dd_emulate_2a_diag);
+    turn_on_action:
+      - lambda: |-
+          // v107 SAFETY: a physical device answers on 0x2A (connected) -> do NOT enable emulation
+          // (two devices on the same address = bus collision).
+          if (id(dd_last_2a_read_ms) != 0 && (millis() - id(dd_last_2a_read_ms)) < 30000) {
+            ESP_LOGE("dd_mode", "BEZPIECZNIK: fizyczny panel Strefy 2 0x2A wykryty (polaczono) - NIE wlaczam emulacji.");
+            id(dd_emulate_2a_diag) = false;
+            id(dd_emulate_2a_switch).publish_state(false);
+            return;
+          }
+          id(dd_emulate_2a_diag) = true;
+          id(dd_emulate_33_diag) = false;  // v94: panel aktywny => Dominus zbedny
+          ESP_LOGW("dd_mode", "v85 EMULACJA panelu Strefy 2 addr 42/0x2A - flaga ON (backend serwowania 0x2A do zrobienia)");
+    turn_off_action:
+      - lambda: |-
+          id(dd_emulate_2a_diag) = false;
+          id(dd_last_2a_read_ms) = 0;  // v107: reset polaczenia
+          ESP_LOGW("dd_mode", "v85 EMULACJA Strefy 2 addr 42 wylaczona");
+
+  - platform: template
+    name: "Immergas - Emulate Panel Zone 3"
+    id: dd_emulate_2b_switch
+    icon: mdi:robot
+    entity_category: diagnostic
+    restore_mode: RESTORE_DEFAULT_OFF
+    lambda: |-
+      return id(dd_emulate_2b_diag);
+    turn_on_action:
+      - lambda: |-
+          // v107 SAFETY: a physical device answers on 0x2B (connected) -> do NOT enable emulation
+          // (two devices on the same address = bus collision).
+          if (id(dd_last_2b_read_ms) != 0 && (millis() - id(dd_last_2b_read_ms)) < 30000) {
+            ESP_LOGE("dd_mode", "BEZPIECZNIK: fizyczny panel Strefy 3 0x2B wykryty (polaczono) - NIE wlaczam emulacji.");
+            id(dd_emulate_2b_diag) = false;
+            id(dd_emulate_2b_switch).publish_state(false);
+            return;
+          }
+          id(dd_emulate_2b_diag) = true;
+          id(dd_emulate_33_diag) = false;  // v94: panel aktywny => Dominus zbedny
+          ESP_LOGW("dd_mode", "v85 EMULACJA panelu Strefy 3 addr 43/0x2B - flaga ON (backend serwowania 0x2B do zrobienia)");
+    turn_off_action:
+      - lambda: |-
+          id(dd_emulate_2b_diag) = false;
+          id(dd_last_2b_read_ms) = 0;  // v107: reset polaczenia
+          ESP_LOGW("dd_mode", "v85 EMULACJA Strefy 3 addr 43 wylaczona");
+
+
+
+number:
+  # ------------------------------------------------------------
+  # v57 DHW setpoint - control (the emulator returns it on READ 2095, the boiler applies it)
+  # ------------------------------------------------------------
+  - platform: template
+    name: "Immergas - D05 DHW setpoint value"
+    id: cwu_setpoint_number
+    icon: mdi:water-thermometer
+    unit_of_measurement: "°C"
+    min_value: 30
+    max_value: 60
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      return id(cwu_setpoint_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(cwu_setpoint_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v57 STEROWANIE CWU: zadana %.1f stopni raw=%d. Emulator zwraca to na READ 2095.", x, id(cwu_setpoint_raw));
+          id(cwu_setpoint_number).publish_state(x);  // v61: natychmiastowy update suwaka w HA
+          id(cwu_thermostat).make_call().set_target_temperature_low(x).perform();  // v65: sync termostat
+
+  # ------------------------------------------------------------
+  # Zone 1 - active setpoint and U03/Offset
+  # ------------------------------------------------------------
+  - platform: template
+    name: "Immergas - CH Setpoint Zone 1"
+    id: zone1_setpoint_number
+    icon: mdi:home-thermometer
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      return id(zone1_setpoint_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          int raw = (int) round(x * 10.0f);
+          id(zone1_setpoint_raw) = raw;
+          ESP_LOGW("dd_control", "v18 anchor-zone-write: zlecono zapis Strefy 1: zadana %.1f°C raw=%d. Czekam na naturalny ACK jako kotwicę.", x, raw);
+          id(zone1_setpoint_number).publish_state(x);  // v61: natychmiastowy update suwaka w HA
+          id(co_thermostat).make_call().set_target_temperature_low(x).perform();  // v65: sync termostat
+
+  - platform: template
+    name: "Immergas - U03 Heating offset (CH) zone 1"
+    id: zone1_offset_number
+    icon: mdi:sine-wave
+    unit_of_measurement: "°C"
+    min_value: -10
+    max_value: 10
+    step: 1
+    mode: slider
+    optimistic: false
+    lambda: |-
+      return id(zone1_offset_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          int raw = (int) round(x * 10.0f);
+          id(zone1_offset_raw) = raw;
+          ESP_LOGW("dd_control", "v18 anchor-zone-write: zlecono zapis U03 / Offset Flow: %.1f raw=%d. Czekam na naturalny ACK jako kotwicę.", x, raw);
+          id(zone1_offset_number).publish_state(x);  // v61: natychmiastowy update suwaka w HA
+
+  # v96: ZONE 2/3 - CH setpoint + offset. Placeholders (the boiler reads zones 2/3 only in a multi-zone
+  # setup A13; the 0x2A/0x2B serving backend doesn't exist yet). Sliders set the global + sync the thermostat.
+  - platform: template
+    name: "Immergas - CH Setpoint Zone 2"
+    id: zone2_setpoint_number
+    icon: mdi:home-thermometer
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(zone2_setpoint_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(zone2_setpoint_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v96 Strefa 2 zadana %.1f°C raw=%d (placeholder - backend 0x2A do zrobienia)", x, id(zone2_setpoint_raw));
+          id(zone2_setpoint_number).publish_state(x);
+          id(co_thermostat_2).make_call().set_target_temperature_low(x).perform();
+
+  - platform: template
+    name: "Immergas - CH Setpoint Zone 3"
+    id: zone3_setpoint_number
+    icon: mdi:home-thermometer
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(zone3_setpoint_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(zone3_setpoint_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v96 Strefa 3 zadana %.1f°C raw=%d (placeholder - backend 0x2B do zrobienia)", x, id(zone3_setpoint_raw));
+          id(zone3_setpoint_number).publish_state(x);
+          id(co_thermostat_3).make_call().set_target_temperature_low(x).perform();
+
+  - platform: template
+    name: "Immergas - U04 Heating offset (CH) zone 2"
+    id: zone2_offset_number
+    icon: mdi:sine-wave
+    unit_of_measurement: "°C"
+    min_value: -10
+    max_value: 10
+    step: 1
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(zone2_offset_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(zone2_offset_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v96 Offset c.o. Strefa 2 %.1f raw=%d (placeholder - backend 0x2A do zrobienia)", x, id(zone2_offset_raw));
+          id(zone2_offset_number).publish_state(x);
+
+  - platform: template
+    name: "Immergas - U16 Heating offset (CH) zone 3"
+    id: zone3_offset_number
+    icon: mdi:sine-wave
+    unit_of_measurement: "°C"
+    min_value: -10
+    max_value: 10
+    step: 1
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(zone3_offset_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(zone3_offset_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v96 Offset c.o. Strefa 3 %.1f raw=%d (placeholder - backend 0x2B do zrobienia)", x, id(zone3_offset_raw));
+          id(zone3_offset_number).publish_state(x);
+
+  # ------------------------------------------------------------
+  # Dominus - "Manage Zone" screen
+  # ------------------------------------------------------------
+  - platform: template
+    name: "Immergas - Set Comfort Heat Zone 1"
+    id: number_dominus_comfort_heat
+    icon: mdi:fire
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      return id(dominus_comfort_heat_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dominus_comfort_heat_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "Zlecono Set Comfort Heat %.1f°C raw=%d", x, id(dominus_comfort_heat_raw));
+          id(number_dominus_comfort_heat).publish_state(x);  // v61: natychmiastowy update suwaka
+
+  - platform: template
+    name: "Immergas - Set Eco Heat Zone 1"
+    id: number_dominus_eco_heat
+    icon: mdi:leaf
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      return id(dominus_eco_heat_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dominus_eco_heat_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "Zlecono Set Eco Heat %.1f°C raw=%d", x, id(dominus_eco_heat_raw));
+          id(number_dominus_eco_heat).publish_state(x);  // v61: natychmiastowy update suwaka
+
+  - platform: template
+    name: "Immergas - Set Comfort Cool Zone 1"
+    id: number_dominus_comfort_cool
+    icon: mdi:snowflake
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      return id(dominus_comfort_cool_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dominus_comfort_cool_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "Zlecono Set Comfort Cool %.1f°C raw=%d", x, id(dominus_comfort_cool_raw));
+          id(number_dominus_comfort_cool).publish_state(x);  // v61: natychmiastowy update suwaka
+
+  - platform: template
+    name: "Immergas - Set Eco Cool Zone 1"
+    id: number_dominus_eco_cool
+    icon: mdi:snowflake-thermometer
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      return id(dominus_eco_cool_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dominus_eco_cool_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "Zlecono Set Eco Cool %.1f°C raw=%d", x, id(dominus_eco_cool_raw));
+          id(number_dominus_eco_cool).publish_state(x);  // v61: natychmiastowy update suwaka
+
+  - platform: template
+    name: "Immergas - U07 Humidity setting zone 1"
+    id: number_dominus_humidity
+    icon: mdi:water-percent
+    unit_of_measurement: "%"
+    min_value: 30
+    max_value: 90
+    step: 1
+    mode: slider
+    optimistic: false
+    lambda: |-
+      return id(dominus_humidity_raw);
+    set_action:
+      - lambda: |-
+          id(dominus_humidity_raw) = (int) round(x);
+          ESP_LOGW("dd_control", "Zlecono Set Umidity %.0f%% raw=%d", x, id(dominus_humidity_raw));
+          id(number_dominus_humidity).publish_state(x);  // v61: natychmiastowy update suwaka
+
+  - platform: template
+    name: "Immergas - Set Flow Zone 1"
+    id: number_dominus_set_flow
+    icon: mdi:coolant-temperature
+    unit_of_measurement: "°C"
+    min_value: 20
+    max_value: 55
+    step: 1
+    mode: slider
+    optimistic: false
+    lambda: |-
+      return id(dominus_set_flow_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dominus_set_flow_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "Zlecono Set Flow %.1f°C raw=%d", x, id(dominus_set_flow_raw));
+          id(number_dominus_set_flow).publish_state(x);  // v61: natychmiastowy update suwaka
+
+  # v102: "Manage Zone" settings - Zone 2 (0x2A)
+
+  - platform: template
+    name: "Immergas - Set Comfort Heat Zone 2"
+    id: number_dominus_comfort_heat_z2
+    icon: mdi:fire
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(dominus_comfort_heat_z2_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dominus_comfort_heat_z2_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v102 Set Comfort Heat S2 %.1f raw=%d", x, id(dominus_comfort_heat_z2_raw));
+          id(number_dominus_comfort_heat_z2).publish_state(x);
+
+  - platform: template
+    name: "Immergas - Set Eco Heat Zone 2"
+    id: number_dominus_eco_heat_z2
+    icon: mdi:leaf
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(dominus_eco_heat_z2_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dominus_eco_heat_z2_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v102 Set Eco Heat S2 %.1f raw=%d", x, id(dominus_eco_heat_z2_raw));
+          id(number_dominus_eco_heat_z2).publish_state(x);
+
+  - platform: template
+    name: "Immergas - Set Comfort Cool Zone 2"
+    id: number_dominus_comfort_cool_z2
+    icon: mdi:snowflake
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(dominus_comfort_cool_z2_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dominus_comfort_cool_z2_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v102 Set Comfort Cool S2 %.1f raw=%d", x, id(dominus_comfort_cool_z2_raw));
+          id(number_dominus_comfort_cool_z2).publish_state(x);
+
+  - platform: template
+    name: "Immergas - Set Eco Cool Zone 2"
+    id: number_dominus_eco_cool_z2
+    icon: mdi:snowflake-thermometer
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(dominus_eco_cool_z2_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dominus_eco_cool_z2_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v102 Set Eco Cool S2 %.1f raw=%d", x, id(dominus_eco_cool_z2_raw));
+          id(number_dominus_eco_cool_z2).publish_state(x);
+
+  - platform: template
+    name: "Immergas - U08 Humidity setting zone 2"
+    id: number_dominus_humidity_z2
+    icon: mdi:water-percent
+    unit_of_measurement: "%"
+    min_value: 30
+    max_value: 90
+    step: 1
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(dominus_humidity_z2_raw);
+    set_action:
+      - lambda: |-
+          id(dominus_humidity_z2_raw) = (int) round(x);
+          ESP_LOGW("dd_control", "v102 Set Umidity S2 %.1f raw=%d", x, id(dominus_humidity_z2_raw));
+          id(number_dominus_humidity_z2).publish_state(x);
+
+  - platform: template
+    name: "Immergas - Set Flow Zone 2"
+    id: number_dominus_set_flow_z2
+    icon: mdi:coolant-temperature
+    unit_of_measurement: "°C"
+    min_value: 20
+    max_value: 55
+    step: 1
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(dominus_set_flow_z2_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dominus_set_flow_z2_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v102 Set Flow S2 %.1f raw=%d", x, id(dominus_set_flow_z2_raw));
+          id(number_dominus_set_flow_z2).publish_state(x);
+
+  # v102: "Manage Zone" settings - Zone 3 (0x2B)
+
+  - platform: template
+    name: "Immergas - Set Comfort Heat Zone 3"
+    id: number_dominus_comfort_heat_z3
+    icon: mdi:fire
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(dominus_comfort_heat_z3_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dominus_comfort_heat_z3_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v102 Set Comfort Heat S3 %.1f raw=%d", x, id(dominus_comfort_heat_z3_raw));
+          id(number_dominus_comfort_heat_z3).publish_state(x);
+
+  - platform: template
+    name: "Immergas - Set Eco Heat Zone 3"
+    id: number_dominus_eco_heat_z3
+    icon: mdi:leaf
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(dominus_eco_heat_z3_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dominus_eco_heat_z3_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v102 Set Eco Heat S3 %.1f raw=%d", x, id(dominus_eco_heat_z3_raw));
+          id(number_dominus_eco_heat_z3).publish_state(x);
+
+  - platform: template
+    name: "Immergas - Set Comfort Cool Zone 3"
+    id: number_dominus_comfort_cool_z3
+    icon: mdi:snowflake
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(dominus_comfort_cool_z3_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dominus_comfort_cool_z3_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v102 Set Comfort Cool S3 %.1f raw=%d", x, id(dominus_comfort_cool_z3_raw));
+          id(number_dominus_comfort_cool_z3).publish_state(x);
+
+  - platform: template
+    name: "Immergas - Set Eco Cool Zone 3"
+    id: number_dominus_eco_cool_z3
+    icon: mdi:snowflake-thermometer
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(dominus_eco_cool_z3_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dominus_eco_cool_z3_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v102 Set Eco Cool S3 %.1f raw=%d", x, id(dominus_eco_cool_z3_raw));
+          id(number_dominus_eco_cool_z3).publish_state(x);
+
+  - platform: template
+    name: "Immergas - U18 Humidity setting zone 3"
+    id: number_dominus_humidity_z3
+    icon: mdi:water-percent
+    unit_of_measurement: "%"
+    min_value: 30
+    max_value: 90
+    step: 1
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(dominus_humidity_z3_raw);
+    set_action:
+      - lambda: |-
+          id(dominus_humidity_z3_raw) = (int) round(x);
+          ESP_LOGW("dd_control", "v102 Set Umidity S3 %.1f raw=%d", x, id(dominus_humidity_z3_raw));
+          id(number_dominus_humidity_z3).publish_state(x);
+
+  - platform: template
+    name: "Immergas - Set Flow Zone 3"
+    id: number_dominus_set_flow_z3
+    icon: mdi:coolant-temperature
+    unit_of_measurement: "°C"
+    min_value: 20
+    max_value: 55
+    step: 1
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(dominus_set_flow_z3_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dominus_set_flow_z3_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v102 Set Flow S3 %.1f raw=%d", x, id(dominus_set_flow_z3_raw));
+          id(number_dominus_set_flow_z3).publish_state(x);
+
+
+datetime:
+  # v70: Zone 1 schedule - 4 daily profiles (cal1-4), each with 4 ranges (start/end).
+  # Read by the emulator on 0x33/0x29 (registers 2310-2347). HH:MM time-picker in HA.
+  # optimistic+restore: state kept locally (flash), no time source needed.
+  - platform: template
+    name: "Immergas - Cal. 1 Range 1 ON"
+    id: dt_cal1_f1_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "06:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 1 Range 1 OFF"
+    id: dt_cal1_f1_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "09:30:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 1 Range 2 ON"
+    id: dt_cal1_f2_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "09:30:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 1 Range 2 OFF"
+    id: dt_cal1_f2_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 1 Range 3 ON"
+    id: dt_cal1_f3_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 1 Range 3 OFF"
+    id: dt_cal1_f3_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:59:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 1 Range 4 ON"
+    id: dt_cal1_f4_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "00:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 1 Range 4 OFF"
+    id: dt_cal1_f4_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "06:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 2 Range 1 ON"
+    id: dt_cal2_f1_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "06:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 2 Range 1 OFF"
+    id: dt_cal2_f1_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "12:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 2 Range 2 ON"
+    id: dt_cal2_f2_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "15:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 2 Range 2 OFF"
+    id: dt_cal2_f2_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 2 Range 3 ON"
+    id: dt_cal2_f3_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 2 Range 3 OFF"
+    id: dt_cal2_f3_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 2 Range 4 ON"
+    id: dt_cal2_f4_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 2 Range 4 OFF"
+    id: dt_cal2_f4_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 3 Range 1 ON"
+    id: dt_cal3_f1_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "06:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 3 Range 1 OFF"
+    id: dt_cal3_f1_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 3 Range 2 ON"
+    id: dt_cal3_f2_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 3 Range 2 OFF"
+    id: dt_cal3_f2_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 3 Range 3 ON"
+    id: dt_cal3_f3_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 3 Range 3 OFF"
+    id: dt_cal3_f3_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 3 Range 4 ON"
+    id: dt_cal3_f4_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 3 Range 4 OFF"
+    id: dt_cal3_f4_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 4 Range 1 ON"
+    id: dt_cal4_f1_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "00:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 4 Range 1 OFF"
+    id: dt_cal4_f1_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "00:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 4 Range 2 ON"
+    id: dt_cal4_f2_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "00:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 4 Range 2 OFF"
+    id: dt_cal4_f2_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "00:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 4 Range 3 ON"
+    id: dt_cal4_f3_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "00:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 4 Range 3 OFF"
+    id: dt_cal4_f3_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "00:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 4 Range 4 ON"
+    id: dt_cal4_f4_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "00:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 4 Range 4 OFF"
+    id: dt_cal4_f4_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "00:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+
+select:
+  # v70: assign a profile (Cal 1-4) to a weekday - Zone 1 (registers 2410-2416).
+  - platform: template
+    name: "Immergas - CH Schedule Monday Zone 1"
+    id: sel_weekday_1
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Tuesday Zone 1"
+    id: sel_weekday_2
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Wednesday Zone 1"
+    id: sel_weekday_3
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Thursday Zone 1"
+    id: sel_weekday_4
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Friday Zone 1"
+    id: sel_weekday_5
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Saturday Zone 1"
+    id: sel_weekday_6
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Sunday Zone 1"
+    id: sel_weekday_7
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  # v70: shortcut - set the SAME profile for all 7 days at once (per-day still works independently).
+  # "(select)" = stan neutralny, nic nie robi.
+  - platform: template
+    name: "Immergas - CH Schedule all days Zone 1"
+    id: sel_weekday_all
+    icon: mdi:calendar-multiselect
+    optimistic: true
+    entity_category: config
+    options:
+      - "(select)"
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "(select)"
+    set_action:
+      - lambda: |-
+          if (x == "(select)") return;
+          id(sel_weekday_1).make_call().set_option(x).perform();
+          id(sel_weekday_2).make_call().set_option(x).perform();
+          id(sel_weekday_3).make_call().set_option(x).perform();
+          id(sel_weekday_4).make_call().set_option(x).perform();
+          id(sel_weekday_5).make_call().set_option(x).perform();
+          id(sel_weekday_6).make_call().set_option(x).perform();
+          id(sel_weekday_7).make_call().set_option(x).perform();
+          ESP_LOGW("dd_chrono", "v70 Wszystkie dni Strefy 1 -> %s", x.c_str());
+  # v106: assign a calendar to a day - Zone 2 (0x2A, reg. 2420-2426) and Zone 3 (0x2B, 2430-2436).
+  - platform: template
+    name: "Immergas - CH Schedule Monday Zone 2"
+    id: sel_weekday_z2_1
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Tuesday Zone 2"
+    id: sel_weekday_z2_2
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Wednesday Zone 2"
+    id: sel_weekday_z2_3
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Thursday Zone 2"
+    id: sel_weekday_z2_4
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Friday Zone 2"
+    id: sel_weekday_z2_5
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Saturday Zone 2"
+    id: sel_weekday_z2_6
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Sunday Zone 2"
+    id: sel_weekday_z2_7
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule all days Zone 2"
+    id: sel_weekday_z2_all
+    icon: mdi:calendar-multiselect
+    optimistic: true
+    entity_category: config
+    options:
+      - "(select)"
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "(select)"
+    set_action:
+      - lambda: |-
+          if (x == "(select)") return;
+          id(sel_weekday_z2_1).make_call().set_option(x).perform();
+          id(sel_weekday_z2_2).make_call().set_option(x).perform();
+          id(sel_weekday_z2_3).make_call().set_option(x).perform();
+          id(sel_weekday_z2_4).make_call().set_option(x).perform();
+          id(sel_weekday_z2_5).make_call().set_option(x).perform();
+          id(sel_weekday_z2_6).make_call().set_option(x).perform();
+          id(sel_weekday_z2_7).make_call().set_option(x).perform();
+          ESP_LOGW("dd_chrono", "v106 Wszystkie dni Strefy 2 -> %s", x.c_str());
+  - platform: template
+    name: "Immergas - CH Schedule Monday Zone 3"
+    id: sel_weekday_z3_1
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Tuesday Zone 3"
+    id: sel_weekday_z3_2
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Wednesday Zone 3"
+    id: sel_weekday_z3_3
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Thursday Zone 3"
+    id: sel_weekday_z3_4
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Friday Zone 3"
+    id: sel_weekday_z3_5
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Saturday Zone 3"
+    id: sel_weekday_z3_6
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Sunday Zone 3"
+    id: sel_weekday_z3_7
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule all days Zone 3"
+    id: sel_weekday_z3_all
+    icon: mdi:calendar-multiselect
+    optimistic: true
+    entity_category: config
+    options:
+      - "(select)"
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "(select)"
+    set_action:
+      - lambda: |-
+          if (x == "(select)") return;
+          id(sel_weekday_z3_1).make_call().set_option(x).perform();
+          id(sel_weekday_z3_2).make_call().set_option(x).perform();
+          id(sel_weekday_z3_3).make_call().set_option(x).perform();
+          id(sel_weekday_z3_4).make_call().set_option(x).perform();
+          id(sel_weekday_z3_5).make_call().set_option(x).perform();
+          id(sel_weekday_z3_6).make_call().set_option(x).perform();
+          id(sel_weekday_z3_7).make_call().set_option(x).perform();
+          ESP_LOGW("dd_chrono", "v106 Wszystkie dni Strefy 3 -> %s", x.c_str());
+  # v83: DHW schedule (water heating) - assign a Cal 1-4 profile to a weekday
+  # (PDU 2490-2496). The SAME cal1-4 profiles as Zone 1 (times 2310-2347), own day assignment.
+  - platform: template
+    name: "Immergas - DHW Schedule Monday"
+    id: sel_dhw_weekday_1
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - DHW Schedule Tuesday"
+    id: sel_dhw_weekday_2
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - DHW Schedule Wednesday"
+    id: sel_dhw_weekday_3
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - DHW Schedule Thursday"
+    id: sel_dhw_weekday_4
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - DHW Schedule Friday"
+    id: sel_dhw_weekday_5
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - DHW Schedule Saturday"
+    id: sel_dhw_weekday_6
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - DHW Schedule Sunday"
+    id: sel_dhw_weekday_7
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  # v83: shortcut - set the same profile for all 7 DHW days.
+  - platform: template
+    name: "Immergas - DHW Schedule all days"
+    id: sel_dhw_weekday_all
+    icon: mdi:calendar-multiselect
+    optimistic: true
+    entity_category: config
+    options:
+      - "(select)"
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "(select)"
+    set_action:
+      - lambda: |-
+          if (x == "(select)") return;
+          id(sel_dhw_weekday_1).make_call().set_option(x).perform();
+          id(sel_dhw_weekday_2).make_call().set_option(x).perform();
+          id(sel_dhw_weekday_3).make_call().set_option(x).perform();
+          id(sel_dhw_weekday_4).make_call().set_option(x).perform();
+          id(sel_dhw_weekday_5).make_call().set_option(x).perform();
+          id(sel_dhw_weekday_6).make_call().set_option(x).perform();
+          id(sel_dhw_weekday_7).make_call().set_option(x).perform();
+          ESP_LOGW("dd_chrono", "v83 CWU: wszystkie dni -> %s", x.c_str());
+  # v100: 5 sources for Zone 1 (Panel/Basement/Ground floor/Upper floor/Whole house), default Upper floor (idx 4).
+  - platform: template
+    name: "Immergas - Temperature source Zone 1"
+    id: temp_source_select
+    icon: mdi:thermometer
+    optimistic: true
+    entity_category: config
+    options:
+      - "Panel"
+      - "Basement"
+      - "Ground floor"
+      - "Upper floor"
+      - "Whole house"
+    initial_option: "Upper floor"
+    set_action:
+      - lambda: |-
+          int idx = 4;
+          if (x == "Panel") idx = 1;
+          else if (x == "Basement") idx = 2;
+          else if (x == "Ground floor") idx = 3;
+          else if (x == "Whole house") idx = 5;
+          id(temp_src_idx) = idx;
+          switch (idx) {
+            case 1: id(ha_room_temp_raw) = id(ha_temp_raw_1); break;
+            case 2: id(ha_room_temp_raw) = id(ha_temp_raw_2); break;
+            case 3: id(ha_room_temp_raw) = id(ha_temp_raw_3); break;
+            case 4: id(ha_room_temp_raw) = id(ha_temp_raw_4); break;
+            case 5: id(ha_room_temp_raw) = id(ha_temp_raw_5); break;
+          }
+          ESP_LOGW("dd_control", "v100 Zrodlo TEMP Strefy 1 -> %d (%s)", idx, x.c_str());
+  - platform: template
+    name: "Immergas - Humidity source Zone 1"
+    id: hum_source_select
+    icon: mdi:water-percent
+    optimistic: true
+    entity_category: config
+    options:
+      - "Panel"
+      - "Basement"
+      - "Ground floor"
+      - "Upper floor"
+      - "Whole house"
+    initial_option: "Upper floor"
+    set_action:
+      - lambda: |-
+          int idx = 4;
+          if (x == "Panel") idx = 1;
+          else if (x == "Basement") idx = 2;
+          else if (x == "Ground floor") idx = 3;
+          else if (x == "Whole house") idx = 5;
+          id(hum_src_idx) = idx;
+          switch (idx) {
+            case 1: id(ha_room_humidity_raw) = id(ha_hum_raw_1); break;
+            case 2: id(ha_room_humidity_raw) = id(ha_hum_raw_2); break;
+            case 3: id(ha_room_humidity_raw) = id(ha_hum_raw_3); break;
+            case 4: id(ha_room_humidity_raw) = id(ha_hum_raw_4); break;
+            case 5: id(ha_room_humidity_raw) = id(ha_hum_raw_5); break;
+          }
+          ESP_LOGW("dd_control", "v100 Zrodlo WILG Strefy 1 -> %d (%s)", idx, x.c_str());
+
+  # v100: switchable 5-option temp/humidity sources for Zone 2 and 3 (Panel/Basement/Ground floor/Upper floor/Whole house), default Panel.
+  - platform: template
+    name: "Immergas - Temperature source Zone 2"
+    id: temp_source_z2_select
+    icon: mdi:thermometer
+    optimistic: true
+    entity_category: config
+    options:
+      - "Panel"
+      - "Basement"
+      - "Ground floor"
+      - "Upper floor"
+      - "Whole house"
+    initial_option: "Panel"
+    set_action:
+      - lambda: |-
+          int idx = 1;
+          if (x == "Basement") idx = 2;
+          else if (x == "Ground floor") idx = 3;
+          else if (x == "Upper floor") idx = 4;
+          else if (x == "Whole house") idx = 5;
+          id(temp_src_z2_idx) = idx;
+          switch (idx) {
+            case 1: id(ha_room_temp_2_raw) = id(ha_temp_raw_z2_1); break;
+            case 2: id(ha_room_temp_2_raw) = id(ha_temp_raw_z2_2); break;
+            case 3: id(ha_room_temp_2_raw) = id(ha_temp_raw_z2_3); break;
+            case 4: id(ha_room_temp_2_raw) = id(ha_temp_raw_z2_4); break;
+            case 5: id(ha_room_temp_2_raw) = id(ha_temp_raw_z2_5); break;
+          }
+          ESP_LOGW("dd_control", "v100 Zrodlo TEMP Strefy 2 -> %d (%s)", idx, x.c_str());
+  - platform: template
+    name: "Immergas - Temperature source Zone 3"
+    id: temp_source_z3_select
+    icon: mdi:thermometer
+    optimistic: true
+    entity_category: config
+    options:
+      - "Panel"
+      - "Basement"
+      - "Ground floor"
+      - "Upper floor"
+      - "Whole house"
+    initial_option: "Panel"
+    set_action:
+      - lambda: |-
+          int idx = 1;
+          if (x == "Basement") idx = 2;
+          else if (x == "Ground floor") idx = 3;
+          else if (x == "Upper floor") idx = 4;
+          else if (x == "Whole house") idx = 5;
+          id(temp_src_z3_idx) = idx;
+          switch (idx) {
+            case 1: id(ha_room_temp_3_raw) = id(ha_temp_raw_z3_1); break;
+            case 2: id(ha_room_temp_3_raw) = id(ha_temp_raw_z3_2); break;
+            case 3: id(ha_room_temp_3_raw) = id(ha_temp_raw_z3_3); break;
+            case 4: id(ha_room_temp_3_raw) = id(ha_temp_raw_z3_4); break;
+            case 5: id(ha_room_temp_3_raw) = id(ha_temp_raw_z3_5); break;
+          }
+          ESP_LOGW("dd_control", "v100 Zrodlo TEMP Strefy 3 -> %d (%s)", idx, x.c_str());
+  - platform: template
+    name: "Immergas - Humidity source Zone 2"
+    id: hum_source_z2_select
+    icon: mdi:water-percent
+    optimistic: true
+    entity_category: config
+    options:
+      - "Panel"
+      - "Basement"
+      - "Ground floor"
+      - "Upper floor"
+      - "Whole house"
+    initial_option: "Panel"
+    set_action:
+      - lambda: |-
+          int idx = 1;
+          if (x == "Basement") idx = 2;
+          else if (x == "Ground floor") idx = 3;
+          else if (x == "Upper floor") idx = 4;
+          else if (x == "Whole house") idx = 5;
+          id(hum_src_z2_idx) = idx;
+          switch (idx) {
+            case 1: id(ha_room_humidity_2_raw) = id(ha_hum_raw_z2_1); break;
+            case 2: id(ha_room_humidity_2_raw) = id(ha_hum_raw_z2_2); break;
+            case 3: id(ha_room_humidity_2_raw) = id(ha_hum_raw_z2_3); break;
+            case 4: id(ha_room_humidity_2_raw) = id(ha_hum_raw_z2_4); break;
+            case 5: id(ha_room_humidity_2_raw) = id(ha_hum_raw_z2_5); break;
+          }
+          ESP_LOGW("dd_control", "v100 Zrodlo WILG Strefy 2 -> %d (%s)", idx, x.c_str());
+  - platform: template
+    name: "Immergas - Humidity source Zone 3"
+    id: hum_source_z3_select
+    icon: mdi:water-percent
+    optimistic: true
+    entity_category: config
+    options:
+      - "Panel"
+      - "Basement"
+      - "Ground floor"
+      - "Upper floor"
+      - "Whole house"
+    initial_option: "Panel"
+    set_action:
+      - lambda: |-
+          int idx = 1;
+          if (x == "Basement") idx = 2;
+          else if (x == "Ground floor") idx = 3;
+          else if (x == "Upper floor") idx = 4;
+          else if (x == "Whole house") idx = 5;
+          id(hum_src_z3_idx) = idx;
+          switch (idx) {
+            case 1: id(ha_room_humidity_3_raw) = id(ha_hum_raw_z3_1); break;
+            case 2: id(ha_room_humidity_3_raw) = id(ha_hum_raw_z3_2); break;
+            case 3: id(ha_room_humidity_3_raw) = id(ha_hum_raw_z3_3); break;
+            case 4: id(ha_room_humidity_3_raw) = id(ha_hum_raw_z3_4); break;
+            case 5: id(ha_room_humidity_3_raw) = id(ha_hum_raw_z3_5); break;
+          }
+          ESP_LOGW("dd_control", "v100 Zrodlo WILG Strefy 3 -> %d (%s)", idx, x.c_str());
+
+  - platform: template
+    name: "Immergas - System operating mode"
+    id: operating_mode_select
+    icon: mdi:state-machine
+    # v60: optimistic MUSI byc false bo jest lambda (ESPHome: "optimistic cannot be used with
+    # lambda"). Instant-feedback robimy przez publish_state(x) w set_action ponizej.
+    optimistic: false
+    options:
+      - "Standby"
+      - "Summer DHW"
+      - "Cooling"
+      - "Winter CH+DHW"
+    lambda: |-
+      switch (id(operating_mode_raw)) {
+        case 0: return std::string("Standby");
+        case 1: return std::string("Summer DHW");
+        case 2: return std::string("Cooling");
+        case 3: return std::string("Winter CH+DHW");
+        default: return std::string("Winter CH+DHW");
+      }
+    set_action:
+      - lambda: |-
+          int mode = 3;
+          if (x == "Standby") {
+            mode = 0;
+          } else if (x == "Summer DHW") {
+            mode = 1;
+          } else if (x == "Cooling") {
+            mode = 2;
+          } else if (x == "Winter CH+DHW") {
+            mode = 3;
+          }
+
+          // v57 MODE CONTROL (passive, as Dominus): we set the REQUESTED mode, which
+          // the emulator returns on READ 2000. The boiler reads and applies it. No active writing.
+          // mode_user_set=true -> from now the emulator DICTATES the mode, ignoring the boiler's 2000 write-back.
+          id(operating_mode_raw) = mode;
+          id(operating_mode_target_raw) = mode;
+          id(mode_user_set) = true;
+
+          // v59/v60: natychmiastowe odswiezenie w HA (bez czekania na poll) - select + sensor.
+          id(operating_mode_select).publish_state(x);
+
+          ESP_LOGW("dd_control", "v59 STEROWANIE TRYBEM: zadany %s -> %d. Emulator zwraca to na READ 2000, piec zastosuje (~1.85s).", x.c_str(), mode);
+
+sensor:
+
+  # ------------------------------------------------------------
+  # v62: inputs from HA - Zone 1 room temp and humidity (for the emulated panel 0x29).
+  # ------------------------------------------------------------
+  # v63: 3 temp sources. Each updates its buffer; if currently selected -> also the output.
+  # v101: source 1 "Panel" (Zone 1 temp) = real PDU 2005 of the physical panel 0x29
+  # (handle_pdu -> ha_temp_raw_1), nie z HA.
+  - platform: homeassistant
+    id: ha_temp_in_2
+    entity_id: ${temp_src_2}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_temp_raw_2) = (int) roundf(x * 10.0f);
+            if (id(temp_src_idx) == 2) id(ha_room_temp_raw) = id(ha_temp_raw_2); }
+  - platform: homeassistant
+    id: ha_temp_in_3
+    entity_id: ${temp_src_3}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_temp_raw_3) = (int) roundf(x * 10.0f);
+            if (id(temp_src_idx) == 3) id(ha_room_temp_raw) = id(ha_temp_raw_3); }
+  - platform: homeassistant
+    id: ha_temp_in_4
+    entity_id: ${temp_src_4}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_temp_raw_4) = (int) roundf(x * 10.0f);
+            if (id(temp_src_idx) == 4) id(ha_room_temp_raw) = id(ha_temp_raw_4); }
+  - platform: homeassistant
+    id: ha_temp_in_5
+    entity_id: ${temp_src_5}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_temp_raw_5) = (int) roundf(x * 10.0f);
+            if (id(temp_src_idx) == 5) id(ha_room_temp_raw) = id(ha_temp_raw_5); }
+
+  # v64/v100: 5 humidity sources (same as above).
+  # v101: source 1 "Panel" (Zone 1 humidity) = real PDU 2006 of the physical panel 0x29
+  # (handle_pdu -> ha_hum_raw_1), nie z HA.
+  - platform: homeassistant
+    id: ha_hum_in_2
+    entity_id: ${hum_src_2}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_hum_raw_2) = (int) roundf(x);
+            if (id(hum_src_idx) == 2) id(ha_room_humidity_raw) = id(ha_hum_raw_2); }
+  - platform: homeassistant
+    id: ha_hum_in_3
+    entity_id: ${hum_src_3}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_hum_raw_3) = (int) roundf(x);
+            if (id(hum_src_idx) == 3) id(ha_room_humidity_raw) = id(ha_hum_raw_3); }
+  - platform: homeassistant
+    id: ha_hum_in_4
+    entity_id: ${hum_src_4}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_hum_raw_4) = (int) roundf(x);
+            if (id(hum_src_idx) == 4) id(ha_room_humidity_raw) = id(ha_hum_raw_4); }
+  - platform: homeassistant
+    id: ha_hum_in_5
+    entity_id: ${hum_src_5}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_hum_raw_5) = (int) roundf(x);
+            if (id(hum_src_idx) == 5) id(ha_room_humidity_raw) = id(ha_hum_raw_5); }
+
+  # v101: HA sources for Zone 2/3 (slots 2-5). Slot 1 "Panel" NOT from HA - real PDU 2005/2006 of the panel
+  # 0x2A/0x2B (handle_pdu -> ha_temp/hum_raw_z2/z3_1). Each writes its buffer; the active one (idx) -> output.
+  - platform: homeassistant
+    id: ha_temp_in_z2_2
+    entity_id: ${temp_src_z2_2}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_temp_raw_z2_2) = (int) roundf(x * 10.0f);
+            if (id(temp_src_z2_idx) == 2) id(ha_room_temp_2_raw) = id(ha_temp_raw_z2_2); }
+  - platform: homeassistant
+    id: ha_temp_in_z2_3
+    entity_id: ${temp_src_z2_3}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_temp_raw_z2_3) = (int) roundf(x * 10.0f);
+            if (id(temp_src_z2_idx) == 3) id(ha_room_temp_2_raw) = id(ha_temp_raw_z2_3); }
+  - platform: homeassistant
+    id: ha_temp_in_z2_4
+    entity_id: ${temp_src_z2_4}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_temp_raw_z2_4) = (int) roundf(x * 10.0f);
+            if (id(temp_src_z2_idx) == 4) id(ha_room_temp_2_raw) = id(ha_temp_raw_z2_4); }
+  - platform: homeassistant
+    id: ha_temp_in_z2_5
+    entity_id: ${temp_src_z2_5}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_temp_raw_z2_5) = (int) roundf(x * 10.0f);
+            if (id(temp_src_z2_idx) == 5) id(ha_room_temp_2_raw) = id(ha_temp_raw_z2_5); }
+  - platform: homeassistant
+    id: ha_hum_in_z2_2
+    entity_id: ${hum_src_z2_2}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_hum_raw_z2_2) = (int) roundf(x);
+            if (id(hum_src_z2_idx) == 2) id(ha_room_humidity_2_raw) = id(ha_hum_raw_z2_2); }
+  - platform: homeassistant
+    id: ha_hum_in_z2_3
+    entity_id: ${hum_src_z2_3}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_hum_raw_z2_3) = (int) roundf(x);
+            if (id(hum_src_z2_idx) == 3) id(ha_room_humidity_2_raw) = id(ha_hum_raw_z2_3); }
+  - platform: homeassistant
+    id: ha_hum_in_z2_4
+    entity_id: ${hum_src_z2_4}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_hum_raw_z2_4) = (int) roundf(x);
+            if (id(hum_src_z2_idx) == 4) id(ha_room_humidity_2_raw) = id(ha_hum_raw_z2_4); }
+  - platform: homeassistant
+    id: ha_hum_in_z2_5
+    entity_id: ${hum_src_z2_5}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_hum_raw_z2_5) = (int) roundf(x);
+            if (id(hum_src_z2_idx) == 5) id(ha_room_humidity_2_raw) = id(ha_hum_raw_z2_5); }
+  - platform: homeassistant
+    id: ha_temp_in_z3_2
+    entity_id: ${temp_src_z3_2}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_temp_raw_z3_2) = (int) roundf(x * 10.0f);
+            if (id(temp_src_z3_idx) == 2) id(ha_room_temp_3_raw) = id(ha_temp_raw_z3_2); }
+  - platform: homeassistant
+    id: ha_temp_in_z3_3
+    entity_id: ${temp_src_z3_3}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_temp_raw_z3_3) = (int) roundf(x * 10.0f);
+            if (id(temp_src_z3_idx) == 3) id(ha_room_temp_3_raw) = id(ha_temp_raw_z3_3); }
+  - platform: homeassistant
+    id: ha_temp_in_z3_4
+    entity_id: ${temp_src_z3_4}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_temp_raw_z3_4) = (int) roundf(x * 10.0f);
+            if (id(temp_src_z3_idx) == 4) id(ha_room_temp_3_raw) = id(ha_temp_raw_z3_4); }
+  - platform: homeassistant
+    id: ha_temp_in_z3_5
+    entity_id: ${temp_src_z3_5}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_temp_raw_z3_5) = (int) roundf(x * 10.0f);
+            if (id(temp_src_z3_idx) == 5) id(ha_room_temp_3_raw) = id(ha_temp_raw_z3_5); }
+  - platform: homeassistant
+    id: ha_hum_in_z3_2
+    entity_id: ${hum_src_z3_2}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_hum_raw_z3_2) = (int) roundf(x);
+            if (id(hum_src_z3_idx) == 2) id(ha_room_humidity_3_raw) = id(ha_hum_raw_z3_2); }
+  - platform: homeassistant
+    id: ha_hum_in_z3_3
+    entity_id: ${hum_src_z3_3}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_hum_raw_z3_3) = (int) roundf(x);
+            if (id(hum_src_z3_idx) == 3) id(ha_room_humidity_3_raw) = id(ha_hum_raw_z3_3); }
+  - platform: homeassistant
+    id: ha_hum_in_z3_4
+    entity_id: ${hum_src_z3_4}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_hum_raw_z3_4) = (int) roundf(x);
+            if (id(hum_src_z3_idx) == 4) id(ha_room_humidity_3_raw) = id(ha_hum_raw_z3_4); }
+  - platform: homeassistant
+    id: ha_hum_in_z3_5
+    entity_id: ${hum_src_z3_5}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(ha_hum_raw_z3_5) = (int) roundf(x);
+            if (id(hum_src_z3_idx) == 5) id(ha_room_humidity_3_raw) = id(ha_hum_raw_z3_5); }
+
+  # ------------------------------------------------------------
+  # Main user values
+  # ------------------------------------------------------------
+  - platform: template
+    name: "Immergas - D03 DHW cylinder temperature"
+    id: dhw_temp_sensor
+    icon: mdi:thermometer-water
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    device_class: temperature
+    state_class: measurement
+    lambda: |-
+      if (id(dhw_temp_raw) == 0) return {};
+      return id(dhw_temp_raw) / 10.0f;
+    update_interval: 5s
+
+  - platform: template
+    name: "Immergas - Temperature Zone 1"
+    id: zone1_temp_sensor
+    icon: mdi:home-thermometer-outline
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    device_class: temperature
+    state_class: measurement
+    lambda: |-
+      // v62: shows the room temp fed to the boiler (from HA, via the emulated panel 0x29).
+      return id(ha_room_temp_raw) / 10.0f;
+    update_interval: 5s
+
+  - platform: template
+    name: "Immergas - D06 External ambient temperature"
+    id: outside_temp_sensor
+    icon: mdi:thermometer
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    device_class: temperature
+    state_class: measurement
+    lambda: |-
+      if (id(outside_temp_raw) == 0) return {};
+      return id(outside_temp_raw) / 10.0f;
+    update_interval: 5s
+
+  # ------------------------------------------------------------
+  # Values from the Zone 1 panel / 0x29 diagnostics
+  # ------------------------------------------------------------
+  - platform: template
+    name: "Immergas - D41 Relative humidity zone 1"
+    id: sensor_zone1_humidity
+    icon: mdi:water-percent
+    unit_of_measurement: "%"
+    state_class: measurement
+    accuracy_decimals: 0
+    lambda: |-
+      // v62: shows the humidity fed to the boiler (from HA, via the emulated panel 0x29).
+      return id(ha_room_humidity_raw);
+    update_interval: 5s
+
+  - platform: template
+    name: "Immergas - D42 Relative humidity zone 2"
+    id: sensor_zone2_humidity
+    icon: mdi:water-percent
+    unit_of_measurement: "%"
+    state_class: measurement
+    accuracy_decimals: 0
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(ha_room_humidity_2_raw);
+    update_interval: 5s
+
+  - platform: template
+    name: "Immergas - D102 Relative humidity zone 3"
+    id: sensor_zone3_humidity
+    icon: mdi:water-percent
+    unit_of_measurement: "%"
+    state_class: measurement
+    accuracy_decimals: 0
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(ha_room_humidity_3_raw);
+    update_interval: 5s
+
+  - platform: template
+    name: "Immergas - Temperature Zone 2"
+    id: sensor_zone2_temp
+    icon: mdi:home-thermometer-outline
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(ha_room_temp_2_raw) / 10.0f;
+    update_interval: 5s
+
+  - platform: template
+    name: "Immergas - Temperature Zone 3"
+    id: sensor_zone3_temp
+    icon: mdi:home-thermometer-outline
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(ha_room_temp_3_raw) / 10.0f;
+    update_interval: 5s
+
+  - platform: template
+    name: "Immergas - Boiler firmware version"
+    id: sensor_pdu_29_3031_version
+    icon: mdi:chip
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    lambda: |-
+      if (id(pdu_29_3031_raw) == 0) return {};
+      return id(pdu_29_3031_raw) / 100.0f;
+    update_interval: 30s
+
+  - platform: template
+    name: "Immergas - Panel firmware version Zone 1"
+    id: sensor_pdu_29_3042_version
+    icon: mdi:monitor-dashboard
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    lambda: |-
+      if (id(pdu_29_3042_raw) == 0) return {};
+      return id(pdu_29_3042_raw) / 100.0f;
+    update_interval: 30s
+
+  - platform: template
+    name: "Immergas - Panel firmware version Zone 2"
+    id: sensor_panel2_version
+    icon: mdi:monitor-dashboard
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    lambda: |-
+      if (id(pdu_2a_version_raw) == 0) return {};
+      return id(pdu_2a_version_raw) / 100.0f;
+    update_interval: 30s
+
+  - platform: template
+    name: "Immergas - Panel firmware version Zone 3"
+    id: sensor_panel3_version
+    icon: mdi:monitor-dashboard
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    lambda: |-
+      if (id(pdu_2b_version_raw) == 0) return {};
+      return id(pdu_2b_version_raw) / 100.0f;
+    update_interval: 30s
+
+  # v65: temp sensors for the thermostats (current temperature). Internal - climate only.
+  - platform: template
+    id: co_climate_temp
+    name: "co_climate_temp"
+    internal: true
+    unit_of_measurement: "°C"
+    lambda: |-
+      return id(ha_room_temp_raw) / 10.0f;   // room temp fed to the boiler (average from HA)
+    update_interval: 5s
+  - platform: template
+    id: co_climate_temp_2
+    name: "co_climate_temp_2"
+    internal: true
+    unit_of_measurement: "°C"
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(ha_room_temp_2_raw) / 10.0f;
+    update_interval: 5s
+  - platform: template
+    id: co_climate_temp_3
+    name: "co_climate_temp_3"
+    internal: true
+    unit_of_measurement: "°C"
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(ha_room_temp_3_raw) / 10.0f;
+    update_interval: 5s
+  - platform: template
+    id: cwu_climate_temp
+    name: "cwu_climate_temp"
+    internal: true
+    unit_of_measurement: "°C"
+    lambda: |-
+      return id(dhw_temp_raw) > 0 ? id(dhw_temp_raw) / 10.0f : 45.0f;  // real DHW temp (3016)
+    update_interval: 5s
+
+text_sensor:
+
+  # v110: metadane projektu (autor + repozytorium GitHub) - widoczne jako encje diagnostyczne urzadzenia.
+  - platform: template
+    name: "Immergas - Author"
+    id: meta_author
+    icon: mdi:account
+    entity_category: diagnostic
+    update_interval: 3600s
+    lambda: |-
+      return std::string("${author}");
+  - platform: template
+    name: "Immergas - GitHub"
+    id: meta_github
+    icon: mdi:github
+    entity_category: diagnostic
+    update_interval: 3600s
+    lambda: |-
+      return std::string("${github_url}");
+  - platform: template
+    name: "Immergas - Project version"
+    id: meta_version
+    icon: mdi:tag-outline
+    entity_category: diagnostic
+    update_interval: 3600s
+    lambda: |-
+      return std::string("${project_version}");
+
+  # v91: boiler fault code as "E<code>" (e.g. E142) instead of the raw number (142.0). "None" when 0.
+  - platform: template
+    name: "Immergas - Boiler fault (code)"
+    id: dd_error_code_text
+    icon: mdi:alert-circle
+    entity_category: diagnostic
+    update_interval: 10s
+    lambda: |-
+      int c = id(dd_err_code);
+      if (c == 0) return std::string("None");
+      char b[8];
+      snprintf(b, sizeof(b), "E%02d", c);
+      return std::string(b);
+
+  # v73: Zone 1 operating phase (Comfort/Eco/Manual) from PDU 2010 LB. bit6=Comfort, bit7=Eco, bit2=Manual
+  # (Dominus app logic: flag8 bits 2/6/7). Read-only - the boiler writes 2010 to us (captured in handle_pdu).
+  - platform: template
+    name: "Immergas - Zone 1 phase (Comfort/Eco)"
+    id: dd_zone1_phase_text
+    icon: mdi:home-thermometer
+    update_interval: 10s
+    lambda: |-
+      int lb = id(dd_zone1_status_raw) & 0xFF;
+      if (lb & 0x40) return std::string("Comfort");
+      if (lb & 0x80) return std::string("Eco");
+      if (lb & 0x04) return std::string("Manual");
+      return std::string("—");
+
+  # v96: Zone 2 operating phase (Comfort/Eco/Manual) from dd_zone2_status_raw. Placeholder - the boiler writes
+  # zone 2 status only in a multi-zone setup (A13); with no data shows "—".
+  - platform: template
+    name: "Immergas - Zone 2 phase (Comfort/Eco)"
+    id: dd_zone2_phase_text
+    icon: mdi:home-thermometer
+    update_interval: 10s
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return std::string("—");
+      int lb = id(dd_zone2_status_raw) & 0xFF;
+      if (lb & 0x40) return std::string("Comfort");
+      if (lb & 0x80) return std::string("Eco");
+      if (lb & 0x04) return std::string("Manual");
+      return std::string("—");
+
+  # v96: Zone 3 operating phase (Comfort/Eco/Manual) from dd_zone3_status_raw. Placeholder like Zone 2.
+  - platform: template
+    name: "Immergas - Zone 3 phase (Comfort/Eco)"
+    id: dd_zone3_phase_text
+    icon: mdi:home-thermometer
+    update_interval: 10s
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return std::string("—");
+      int lb = id(dd_zone3_status_raw) & 0xFF;
+      if (lb & 0x40) return std::string("Comfort");
+      if (lb & 0x80) return std::string("Eco");
+      if (lb & 0x04) return std::string("Manual");
+      return std::string("—");
+
+
+  # v71: boiler fault description (English from Dominus anomalies[]). State = 'title. cause -> action'
+  # (front-loaded: the dashboard shows the title, more-info shows the rest; cap 250 = HA limit 255).
+  - platform: template
+    name: "Immergas - Boiler fault (description)"
+    id: dd_error_text
+    icon: mdi:alert-circle-outline
+    entity_category: diagnostic
+    update_interval: 10s
+    lambda: |-
+      int c = id(dd_err_code);
+      if (c == 0) return std::string("No faults");
+      std::string t;
+      switch (c) {
+        case 0: t = "SYSTEM OK. No anomaly -> No action required"; break;
+        case 1: t = "No ignition block. In the event of request of room central heating or domestic hot water production, the boiler does not switch on within the preset time. Upon appliance commissioning or after extended downtime, it may be necessary to eliminate the block. -> Press the Reset button"; break;
+        case 2: t = "Safety thermostat block (over-temperature). During normal operation, if a fault causes excessive overheating internally, the boiler goes into overheating block. -> Press the Reset button"; break;
+        case 3: t = "Flue safety thermostat block. During normal operation, if a fault causes excessive flue gas overheating, the boiler blocks. (Nike versions)/ Wrong P.14 parameter configuration (Star version) -> Press the Reset button (Nike versions)/ Correctly configure the P.14 parameter. Press the Reset button if required (Star versions)"; break;
+        case 4: t = "Contacts resistance block. The P.C.B. detects an anomaly on the gas valve supply. Check the connection. (the anomaly is detected and displayed only in the event of a request). -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 5: t = "Flow probe anomaly. The P.C.B. detects an anomaly on the flow NTC probe. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 6: t = "Domestic hot water probe anomaly. The P.C.B. detects an anomaly on the domestic hot water NTC probe. -> In this case the boiler continues to produce domestic hot water but not with optimal performance. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 8: t = "Maximum N° of reset. Number of allowed resets that have already performed. -> Attention: the anomaly can be reset 5 times consecutively, after which the function in inhibited for at least one hour. One attempt is gained every hour for a maximum of 5 attempts. By switching the appliance on and off again, the 5 attempts are re-acquired."; break;
+        case 10: t = "Insufficient system pressure. Water pressure inside the central heating circuit that is sufficient to guarantee the correct operation of the boiler is not detected. -> Check on the boiler pressure gauge that the system pressure is between 1÷1.2 bar and restore the correct pressure if necessary."; break;
+        case 11: t = "Flue pressure switch anomaly. If normal conditions are restored the boiler restarts without having to be reset -> If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)"; break;
+        case 12: t = "Storage tank probe anomaly. If the P.C.B. detects a fault in the boiler probe, the boiler cannot produce DHW and signals a fault. -> The boiler does not satisfy the DHW production requests. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 13: t = "Air/flue gas flow-meter out of range. With fan stopped, the air/flue gas controller reads an excessively high signal (pressure switch contacts stuck) -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
+        case 15: t = "Configuration error. If the P.C.B. detects an anomaly or incongruity on the electric wiring, the boiler will not start. -> If normal conditions are restored the boiler restarts without having to be reset. Check that the boiler is configured correctly. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 16: t = "Fan anomaly. This occurs if the fan has a mechanical or electrical fault. -> Press the Reset button. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 17: t = "Incorrect fan speed. Number of fan revolutions incorrect -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
+        case 20: t = "Parasite flame block. This occurs in the event of a leak on the detection circuit or anomaly in the flame control unit. -> Press the Reset button. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 23: t = "Return probe anomaly. The P.C.B. detects an anomaly on the flow NTC probe. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 24: t = "Push button control panel anomaly. The P.C.B. detects an anomaly on the pushbutton panel. -> If normal conditions are restored the boiler restarts without having to be reset. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 25: t = "Flue probe block / CRC block (TERA). High flue gas gradient, probable circulator block or no water / memory corrupted -> Press the Reset button"; break;
+        case 27: t = "Insufficient circulation. X -> Press the Reset button"; break;
+        case 28: t = "Domestic hot water leakage. Check that all domestic hot water system cocks are closed and are not leaking and also check that there are no leaks in the system. Once good conditions are restored in the domestic hot water system, the boiler returns to normal operation -> If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)"; break;
+        case 29: t = "Flue probe anomaly. The P.C.B. detects an anomaly on the flue gas probe. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 31: t = "Loss of communication with the CARV2. This occurs if an incompatible remote control is connected, or if communication between the boiler and CARV2 is lost. -> Power cycle the boiler. If the Remote Control is still not detected on re-starting the boiler will switch to local operating mode, i.e. using the controls on the control panel. In this case the ''Central Heating'' mode cannot be activated."; break;
+        case 32: t = "Zone 2 low temperature probe anomaly. If the board detects an anomaly on the zone 2 low temperature probe, the system cannot work in the affected area -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
+        case 33: t = "Zone 3 low temperature probe anomaly. If the board detects an anomaly on the zone 2 low temperature probe, the system cannot work in the affected area -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
+        case 36: t = "IMG Bus communication loss. Communication between the various components is interrupted due to an anomaly on the boiler control unit, on the zone control unit or on the IMG Bus. -> The boiler does not satisfy the room heating requests."; break;
+        case 37: t = "Low power supply voltage. This occurs when the power supply voltage is lower than the allowed limits for the correct boiler operation. -> If normal conditions are restored the boiler restarts without having to be reset."; break;
+        case 38: t = "Loss of flame signal. This occurs when the boiler is ignited correctly and the burner flame switches off unexpectedly; a new attempt at ignition is performed and if normal conditions are restored, the boiler does not have to be reset. -> If normal conditions are restored the boiler restarts without having to be reset."; break;
+        case 39: t = "Solar collector probe anomaly. If the board detects an anomaly on the solar collector probe, the boiler continues to work regularly without the intake of solar energy for heating the DHW as the solar pump stops working -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
+        case 40: t = "Solar storage tank probe anomaly. If the board detects a fault on the solar storage tank probe, the boiler continues to work regularly without the intake of solar energy for heating the DHW as the solar pump stops working. -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
+        case 41: t = "High temperature on the solar collector. This occurs when the temperature of the solar collector exceeds the maximum limit set -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
+        case 42: t = "High temperature on the solar storage tank. This occurs when the temperature of the water in the solar storage tank exceeds the maximum limit set. -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
+        case 43: t = "Block due to loss of flame signal. This occurs if the ''Flame signal loss'' error occurs many times in a row within a preset period. -> Press the Reset button, before restarting, the boiler will run a post-ventilation cycle."; break;
+        case 44: t = "Block for exceeding the maximum accumulated time, close gas valve opening. This occurs if the gas valve remains open for longer than required for normal operation, without the boiler switching on. -> Press the Reset button."; break;
+        case 45: t = "dT high. The boiler detects a sudden, unexpected increase in the dT between the flow probe and the system return probe. -> The power of the burner is limited to prevent damage to the condensation module and once the right dT is restored, the boiler resumes regular operation. Make sure there is water circulating in the boiler, that the pump is configured according to system requirements and that the return probe works properly."; break;
+        case 46: t = "Low temperature thermostat intervention / Incorrect wiring/board configuration. During normal operation, if an anomaly causes excessive overheating of the flow temperature in low temperature conditions, the boiler shuts down. / Wiring error or use of incorrect spare board -> In this case, after cooling down, it is possible to reset the thermostat (see relative instruction sheet). / If the blockage or anomaly persists it is necessary to call an authorised company (e.g. Immergas Technical Assistance Service)."; break;
+        case 47: t = "Burner power limitation. Should flue high temperature be detected, the boiler reduces power supplied so as not to damage it. -> If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 48: t = "System side flow probe anomaly. In the event that the system side flow probe is not connected or is faulty, the anomaly is indicated -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
+        case 49: t = "High temperature block on return probe. This occurs when the heat exchanger return circuit reaches an excessively high temperature -> Make sure that water circulates properly in the boiler and that the three-way valve works properly."; break;
+        case 50: t = "External probe anomaly. In the event that the external probe is not connected or is faulty, the anomaly is indicated -> Check the external probe connection. The system keeps working"; break;
+        case 51: t = "CAR Wireless communication failure. If there is no communication between the boiler and Wireless version CAR, an anomaly is signalled. From this moment, it is only possible to control the system by means of the control panel of the boiler itself. -> Check operation of the Wireless CAR, check the battery charge (refer to the relative instructions booklet)."; break;
+        case 54: t = "Puffer probe anomaly. In the event that the puffer probe is not connected or is faulty, the anomaly is indicated -> The puffer mode is disabled"; break;
+        case 55: t = "Zone 1 flow temperature probe anomaly. If the board detects an anomaly on the zone 1 low temperature probe, the system cannot work in the affected area. -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
+        case 58: t = "Audax anomaly. Anomaly on the Audax heat pump, check the type of anomaly directly on the heat pump display -> The heat pump does not satisfy the room heating and cooling requests; once the connections are restored, switch the system on and off again"; break;
+        case 59: t = "Main supply voltage frequency block. The P.C.B. detects a main supply voltage frequency anomaly. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 60: t = "Anomaly pump blocked. The pump is stopped due to one of the following causes: impeller blocked, electrical fault. -> Try to unblock the pump as described in the relative section. If normal conditions are restored the boiler restarts without having to be reset."; break;
+        case 61: t = "Air in circulator pump. Air is detected inside the pump; the pump cannot work. -> Vent the pump and the central heating circuit. If normal conditions are restored the boiler restarts without having to be reset."; break;
+        case 62: t = "Complete calibration required. Missing calibration is detected by the P.C.B. It may occur in the event the P.C.B. is replaced or if the parameters are altered in the air / gas section, thus requiring ''complete calibration''. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 63: t = "System return probe anomaly. In the event that the return probe is not connected or is faulty, the anomaly is indicated -> The boiler continues to operate without any integration from the external systems connected"; break;
+        case 67: t = "Solar system pressure switch anomaly. Due to a pressure drop in the solar circuit, the pressure switch blocks the operation of the thermal solar circuit -> Check on the pressure gauge of the solar circulation unit that the pressure is at the correct value"; break;
+        case 70: t = "Return/flow probe exchange. X -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 72: t = "Fast calibration required. The P.C.B. detects that some parameters have been altered, thus requiring ''fast calibration''. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 73: t = "High flow probe and safety flow probe deviation detected. The P.C.B. detects an anomaly in the temperature readings of the NTC flow probes; the causes may be: faulty probe, incorrect position, poor system circulation, or clogging of the water side primary heat exchanger. -> If normal conditions are restored the boiler restarts without having to be reset."; break;
+        case 74: t = "Safety flow probe anomaly. The P.C.B. detects an anomaly on the NTC safety flow probe. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 75: t = "Return and/or flow probe malfunction. X -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 76: t = "Return and/or flow probes temperature drift. X -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 77: t = "Combustion control anomaly. Out of range current is detected on the gas valve. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 78: t = "Combustion control anomaly. High current on the gas valve is detected. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 79: t = "Combustion control anomaly. Reduced current on the gas valve is detected. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 80: t = "P.C.B. malfunction block. This occurs in the event of malfunctions of the P.C.B. that controls the valve. -> Press the Reset button"; break;
+        case 84: t = "Combustion anomaly - power reduction in progress. A low supply pressure is detected on the gas line. As a result the appliance power is limited and the anomaly is reported. -> If normal conditions are restored the boiler restarts without having to be reset"; break;
+        case 85: t = "Afterburner problem block. Flame present for about after gas valve closing -> Press the Reset button. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 87: t = "Block - gas valve control. A malfunction of one of the components that controls the gas valve has been detected. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 88: t = "Block - gas valve control. A malfunction of one of the components that controls the gas valve has been detected. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 89: t = "Combustion signal unstable. The flame is unstable due to: presence of flue gas recirculation, wind, unstable gas pressure, unstable fan speed, or due to system malfunction. -> The boiler keeps working."; break;
+        case 90: t = "Combustion signal beyond limit. The combustion signal is beyond the adjustment range required for an extended period of time. -> The boiler keeps working."; break;
+        case 91: t = "Incorrect ignition block. The P.C.B. has exhausted all possible actions in order to obtain optimal ignition of the burner. -> Press the Reset button"; break;
+        case 92: t = "Fan revs correction limit. The system has exhausted all possible corrections of the number of fan revs. -> The boiler keeps working."; break;
+        case 93: t = "Combustion signal beyond limit. The combustion signal is beyond the adjustment range required for an extended period of time. -> The boiler keeps working."; break;
+        case 94: t = "Combustion anomaly. A problem is detected on the combustion control, which may be due to: gas low pressure, flue recirculation, defective gas valve or P.C.B.. -> If normal conditions are restored the boiler restarts without having to be reset."; break;
+        case 95: t = "Combustion signal discontinuous. The system detects a discontinuous combustion signal. -> The boiler keeps working."; break;
+        case 96: t = "Clogged flue. This occurs in the event an obstruction is detected in the flue system. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
+        case 98: t = "Block - maximum no. of software errors. The maximum number of software errors possible has been reached. -> Press the Reset button"; break;
+        case 99: t = "General block. A boiler anomaly has been detected. -> Press the Reset button"; break;
+        case 101: t = "Audax off-line alarm. In the event of communication failure, incorrect connection or heat pump switched off, the boiler electronics do not detect the heat pump -> The heat pump does not satisfy the room heating and cooling requests; once the connections are restored, switch the system on and off again"; break;
+        case 102: t = "Zone 1 off-line expansion alarm. Communication anomaly with zone 1 -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
+        case 103: t = "Zone 2 off-line expansion alarm. Communication anomaly with zone 2 -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
+        case 104: t = "Zone 3 off-line expansion alarm. Communication anomaly with zone 3 -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
+        case 106: t = "DHW probe alarm. The board detects an anomaly on the storage tank probe -> The system cannot produce domestic hot water with the heat pump. The production of the domestic hot water is guaranteed by the boiler"; break;
+        case 120: t = "Zone 1 dehumidification high set alarm. The cooling flow set calculated for dehumidification exceeds the limit set in zone 1 -> The calculated flow set exceeds the limit permitted by the dehumidifier. Cool the room and wait until the dew temperature returns to acceptable values"; break;
+        case 121: t = "Zone 1 device offline alarm. Communication with the zone control is not detected. It is not possible to perform the zone temperature control -> Check that the remote control is switched on"; break;
+        case 122: t = "Zone 2 device offline alarm. Communication with the zone control is not detected. It is not possible to perform the zone temperature control -> Check that the remote control is switched on"; break;
+        case 123: t = "Zone 3 device offline alarm. Communication with the zone control is not detected. It is not possible to perform the zone temperature control -> Check that the remote control is switched on"; break;
+        case 125: t = "Zone 1 room temperature probe anomaly. Anomaly on the room temperature probe of zone 1 (optional). It is not possible to perform the zone temperature control -> In addition to the temperature, the dew point is not calculated for the zone either"; break;
+        case 126: t = "Zone 2 room temperature probe anomaly. Anomaly on the room temperature probe of zone 2 (optional.) It is not possible to perform the zone temperature control -> In addition to the temperature, the dew point is not calculated for the zone either"; break;
+        case 127: t = "Zone 3 room temperature probe anomaly. Anomaly on the room temperature probe of zone 3 (optional). It is not possible to perform the zone temperature control -> In addition to the temperature, the dew point is not calculated for the zone either"; break;
+        case 129: t = "Zone 1 humidity probe anomaly. Anomaly on the humidity probe of zone 1 (optional). Zone humidity cannot be checked -> In addition to the humidity, the dew point is not calculated for the zone either"; break;
+        case 130: t = "Zone 2 humidity probe anomaly. Anomaly on the zone 2 humidity probe (optional). Zone humidity cannot be checked -> In addition to the humidity, the dew point is not calculated for the zone either"; break;
+        case 131: t = "Zone 3 humidity probe anomaly. Anomaly on the zone 3 humidity probe (optional). Zone humidity cannot be checked -> In addition to the humidity, the dew point is not calculated for the zone either"; break;
+        case 132: t = "Zone 2 dehumidification high set alarm. The cooling flow set calculated for dehumidification exceeds the limit set in zone 2 -> The calculated flow set exceeds the limit permitted by the dehumidifier. Cool the room and wait until the dew temperature returns to acceptable values"; break;
+        case 133: t = "Zone 1 dehumidifier fault alarm. Anomaly coming from the dehumidifier (optional) in zone 1 -> The system does not dehumidify in the relative zone"; break;
+        case 134: t = "Zone 2 dehumidifier fault alarm. Anomaly coming from the dehumidifier (optional) in zone 2 -> The system does not dehumidify in the relative zone"; break;
+        case 135: t = "Zone 3 dehumidifier fault alarm. Anomaly coming from the dehumidifier (optional) in zone 3 -> The system does not dehumidify in the relative zone"; break;
+        case 137: t = "Reset system alarm – Restart the system. When the default parameters are restored, the system needs to be restarted -> Turn the system off and on"; break;
+        case 138: t = "Screed heater in progress"; break;
+        case 139: t = "Deaeration in progress"; break;
+        case 177: t = "DHW maximum time alarm. The domestic hot water production requirements are not met within the preset time (5 hours) -> The system continues to operate with non-optimal performance"; break;
+        case 178: t = "Anti-legionella cycle not successful. The anti-legionella cycle is performed unsuccessfully within the preset time (3 hours) -> Press the Reset button"; break;
+        case 179: t = "Liquid probe anomaly. The board detects an anomaly on the liquid phase probe -> The system does not start. Call an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
+        case 181: t = "Remote Control communication failure zone 2. This happens when an incompatible remote control is connected or when communication between the hydronic module and the CARV2 of the second zone is lost -> Disconnect and reconnect the power to the hydronic module. If the Remote Control is still not detected at restart, the system will switch to local operating mode, i.e. using the controls on the control panel. In this case the “Central Heating”, function cannot be activated"; break;
+        case 182: t = "Condensing unit alarm. An anomaly is signalled on the condensing unit -> The system does not work, see the anomaly on the condensing unit and its instructions booklet"; break;
+        case 183: t = "Condensing unit alarm in test mode. A signal notifies that the condensing unit is in test mode -> During this time, room heating/air conditioning and domestic hot water production requirements cannot be met"; break;
+        case 184: t = "Communication with outdoor unit timeout alarm. A signal notifies an anomaly due to a communication problem between the indoor unit and the condensing unit -> Have the electrical connection between the units checked"; break;
+        case 185: t = "Safety module communication alarm. Communication anomaly between P.C.B. and ignition board -> Have the electrical connection between the components checked"; break;
+        case 186: t = "Igniter high voltage anomaly. An anomaly appears on the ignition board -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
+        case 187: t = "Condensing unit return probe alarm. The board detects an anomaly on the heat pump return NTC probe -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
+        case 188: t = "Request out of operating range. A heating or cooling request is made with an outdoor temperature exceeding the operating limits -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
+        case 189: t = "Communication with communication board timeout alarm. If communication between the printed circuit boards is lost, an anomaly is signalled -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
+        case 191: t = "RF communication failure towards CAR v2 RF zone 2. If there is no communication between the indoor unit and Wireless version CAR of the second zone, an anomaly is signalled. From this moment onwards, it is only possible to control the system by means of the indoor unit control panel -> Check operation of the Wireless CAR, check the battery charge (refer to the relative instructions booklet)"; break;
+        case 192: t = "Condensing unit flow probe anomaly. The board detects an anomaly on the NTC heat pump flow probe -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
+        case 193: t = "Appliance in Test mode. A signal notifies that the appliance is in test mode -> The system continues operating properly"; break;
+        case 194: t = "Audax Pro disabled. A signal notifies that the condensing unit has been disabled through the appropriate input in the terminal board -> The system continues operating properly"; break;
+        case 195: t = "Liquid phase low temp. anomaly. An excessively low temperature is detected in the liquid phase -> Check that the cooling circuit is working properly"; break;
+        case 196: t = "High flow temp. block. An excessively high temperature is detected on the heat pump flow circuit -> Check that the cooling circuit is working properly"; break;
+        default: t = "General unrecognised anomaly"; break;
+      }
+      std::string s = t;
+      if (s.size() > 250) {
+        size_t cut = s.rfind(' ', 250);
+        if (cut == std::string::npos || cut < 200) cut = 250;
+        s = s.substr(0, cut) + "...";
+      }
+      return s;
+
+  # v106: removed the "Atom operating mode" entity (diagnostic emulation-mode text - unnecessary).
+  - platform: template
+    name: "Immergas - Controller internal date"
+    id: controller_date_text
+    icon: mdi:calendar-clock
+    entity_category: diagnostic
+    update_interval: 30s
+    lambda: |-
+      if (id(pdu_29_2302_raw) == 0 || id(pdu_29_2303_raw) == 0) return {};
+      uint16_t raw = (uint16_t) id(pdu_29_2302_raw);
+      int day = (raw >> 8) & 0xFF;
+      int month = raw & 0xFF;
+      int year = id(pdu_29_2303_raw);
+      if (day < 1 || day > 31 || month < 1 || month > 12 || year < 2000 || year > 2099) return {};
+      char buf[16];
+      snprintf(buf, sizeof(buf), "%02d.%02d.%04d", day, month, year);
+      return std::string(buf);
+
+# v66: online/offline status of emulated devices. "Online" = the boiler READS that address (03/04)
+# within the last 30 s = it accepted us. When it stops reading (or emulation is off) -> offline.
+binary_sensor:
+
+  # v71: boiler fault flag = PDU 2100 != 0; reset available = PDU 2101 LB bit1 (per Dominus config).
+  - platform: template
+    name: "Immergas - Boiler fault active"
+    id: dd_error_active
+    device_class: problem
+    entity_category: diagnostic
+    lambda: |-
+      return id(dd_err_code) != 0;
+  - platform: template
+    name: "Immergas - Connection Dominus"
+    id: bs_dominus_online
+    device_class: connectivity
+    entity_category: diagnostic
+    lambda: |-
+      if (id(dd_last_33_read_ms) == 0) return false;
+      return (millis() - id(dd_last_33_read_ms)) < 30000;
+
+  - platform: template
+    name: "Immergas - Connection Panel Zone 1"
+    id: bs_panel_online
+    device_class: connectivity
+    entity_category: diagnostic
+    lambda: |-
+      if (id(dd_last_29_read_ms) == 0) return false;
+      return (millis() - id(dd_last_29_read_ms)) < 30000;
+
+  - platform: template
+    name: "Immergas - Connection Panel Zone 2"
+    id: bs_panel2_online
+    device_class: connectivity
+    entity_category: diagnostic
+    lambda: |-
+      if (id(dd_last_2a_read_ms) == 0) return false;
+      return (millis() - id(dd_last_2a_read_ms)) < 30000;
+
+  - platform: template
+    name: "Immergas - Connection Panel Zone 3"
+    id: bs_panel3_online
+    device_class: connectivity
+    entity_category: diagnostic
+    lambda: |-
+      if (id(dd_last_2b_read_ms) == 0) return false;
+      return (millis() - id(dd_last_2b_read_ms)) < 30000;
+
+  - platform: template
+    name: "Immergas - Connection Modbus"
+    id: bs_modbus_online
+    device_class: connectivity
+    entity_category: diagnostic
+    lambda: |-
+      if (!id(dd_enable_replies)) return false;  // v95: Modbus connection OFF -> disconnected
+      if (id(dd_last_1e_read_ms) == 0) return false;
+      return (millis() - id(dd_last_1e_read_ms)) < 30000;
+
+# v65: climate THERMOSTATS. The boiler does the real regulation - here just target <-> setpoint (raw)
+# plus a view of the current value. The heat/idle indicator is cosmetic (heat/idle is logger only).
+climate:
+  - platform: thermostat
+    name: "Immergas - Thermostat Zone 1 (CH)"
+    id: co_thermostat
+    sensor: co_climate_temp
+    min_idle_time: 0s
+    min_heating_off_time: 0s
+    min_heating_run_time: 0s
+    visual:
+      min_temperature: 5
+      max_temperature: 35
+      temperature_step: 0.5
+    default_preset: Dom
+    preset:
+      - name: Dom
+        default_target_temperature_low: 21
+    heat_action:
+      - logger.log: "CO: ponizej zadanej (piec grzeje)"
+    idle_action:
+      - logger.log: "CO: zadana osiagnieta"
+
+  - platform: thermostat
+    name: "Immergas - DHW Thermostat"
+    id: cwu_thermostat
+    sensor: cwu_climate_temp
+    min_idle_time: 0s
+    min_heating_off_time: 0s
+    min_heating_run_time: 0s
+    visual:
+      min_temperature: 30
+      max_temperature: 60
+      temperature_step: 0.5
+    default_preset: Dom
+    preset:
+      - name: Dom
+        default_target_temperature_low: 49
+    heat_action:
+      - logger.log: "CWU: ponizej zadanej"
+    idle_action:
+      - logger.log: "CWU: zadana osiagnieta"
+
+  # v94/v108: CH thermostats for Zone 2 and 3 (restored). current temp from ha_room_temp_2/3_raw (NAN when
+  # zone OFF - v105); target = slider. climate can't be made "unavailable" in ESPHome - target may
+  # show a value when the zone is OFF (platform limitation, accepted).
+  - platform: thermostat
+    name: "Immergas - Thermostat Zone 2 (CH)"
+    id: co_thermostat_2
+    sensor: co_climate_temp_2
+    min_idle_time: 0s
+    min_heating_off_time: 0s
+    min_heating_run_time: 0s
+    visual:
+      min_temperature: 5
+      max_temperature: 35
+      temperature_step: 0.5
+    default_preset: Dom
+    preset:
+      - name: Dom
+        default_target_temperature_low: 21
+    heat_action:
+      - logger.log: "CO Strefa 2: ponizej zadanej"
+    idle_action:
+      - logger.log: "CO Strefa 2: zadana osiagnieta"
+
+  - platform: thermostat
+    name: "Immergas - Thermostat Zone 3 (CH)"
+    id: co_thermostat_3
+    sensor: co_climate_temp_3
+    min_idle_time: 0s
+    min_heating_off_time: 0s
+    min_heating_run_time: 0s
+    visual:
+      min_temperature: 5
+      max_temperature: 35
+      temperature_step: 0.5
+    default_preset: Dom
+    preset:
+      - name: Dom
+        default_target_temperature_low: 21
+    heat_action:
+      - logger.log: "CO Strefa 3: ponizej zadanej"
+    idle_action:
+      - logger.log: "CO Strefa 3: zadana osiagnieta"
+
+interval:
+  # v65: sync thermostat <-> setpoint. First tick: set the thermostat target from the saved setpoint
+  # (so climate shows correctly and doesn't reset the setpoint). Then: the setpoint follows the target.
+  - interval: 1s
+    then:
+      - lambda: |-
+          static bool first = true;
+          if (first) {
+            first = false;
+            id(co_thermostat).make_call().set_target_temperature_low(id(zone1_setpoint_raw) / 10.0f).perform();
+            id(cwu_thermostat).make_call().set_target_temperature_low(id(cwu_setpoint_raw) / 10.0f).perform();
+            id(co_thermostat_2).make_call().set_target_temperature_low(id(zone2_setpoint_raw) / 10.0f).perform();  // v96
+            id(co_thermostat_3).make_call().set_target_temperature_low(id(zone3_setpoint_raw) / 10.0f).perform();  // v96
+            return;
+          }
+          id(zone1_setpoint_raw) = (int) roundf(id(co_thermostat).target_temperature_low * 10.0f);
+          id(cwu_setpoint_raw) = (int) roundf(id(cwu_thermostat).target_temperature_low * 10.0f);
+          id(zone2_setpoint_raw) = (int) roundf(id(co_thermostat_2).target_temperature_low * 10.0f);  // v96
+          id(zone3_setpoint_raw) = (int) roundf(id(co_thermostat_3).target_temperature_low * 10.0f);  // v96
+
+  - interval: 10ms
+    then:
+      - lambda: |-
+          static std::vector<uint8_t> rx;
+
+          // v95: "Modbus connection" (dd_enable_replies) = master RX+TX. OFF -> the emulator does NOT
+          // process the bus: we drain the UART (to avoid overflow), clear rx, don't decode,
+          // don't reply, don't track. The "Modbus status" sensor (0x1E) -> disconnected.
+          if (!id(dd_enable_replies)) {
+            uint8_t bdrain;
+            while (id(dd_uart).available()) { id(dd_uart).read_byte(&bdrain); }
+            rx.clear();
+            return;
+          }
+
+          static uint16_t last_start_03[256] = {0};
+          static uint16_t last_start_04[256] = {0};
+
+          static const uint16_t REG_MODE                    = 2000;
+          static const uint16_t REG_ZONE1_STATUS            = 2010;
+          static const uint16_t REG_ZONE1_TEMP_OLD          = 2011;
+          static const uint16_t REG_ZONE1_SETPOINT          = 2015;
+          static const uint16_t REG_ZONE1_MAX               = 2016;
+          static const uint16_t REG_ZONE1_OFFSET            = 2017;
+          static const uint16_t REG_DHW_SETPOINT            = 2095;
+
+          static const uint16_t REG_COMFORT_HEAT            = 2210;
+          static const uint16_t REG_ECO_HEAT                = 2211;
+          static const uint16_t REG_COMFORT_COOL            = 2214;
+          static const uint16_t REG_ECO_COOL_COPY           = 2215;
+          static const uint16_t REG_HUMIDITY                = 2216;
+          static const uint16_t REG_SET_FLOW                = 2217;
+          static const uint16_t REG_ZONE1_MAX_COPY          = 2218;
+          static const uint16_t REG_ZONE1_OFFSET_COPY       = 2219;
+
+          static const uint16_t REG_DHW_SETPOINT_COPY_1     = 2291;
+          static const uint16_t REG_DHW_SETPOINT_COPY_2     = 2292;
+          static const uint16_t REG_DHW_TEMP_COPY_2293      = 2293;
+          static const uint16_t REG_ECO_COOL                = 2707;
+
+          static const uint16_t REG_OUTSIDE_TEMP            = 3002;
+          static const uint16_t REG_ZONE1_TEMP_COPY         = 3009;
+          static const uint16_t REG_DHW_SETPOINT_COPY_3     = 3015;
+          static const uint16_t REG_DHW_TEMP                = 3016;
+
+          auto calc_crc = [](const std::vector<uint8_t> &data) -> uint16_t {
+            uint16_t crc = 0xFFFF;
+            for (uint8_t b : data) {
+              crc ^= b;
+              for (int i = 0; i < 8; i++) {
+                if (crc & 0x0001) {
+                  crc = (crc >> 1) ^ 0xA001;
+                } else {
+                  crc >>= 1;
+                }
+              }
+            }
+            return crc;
+          };
+
+          auto crc_ok = [&](const std::vector<uint8_t> &frame) -> bool {
+            if (frame.size() < 4) return false;
+            std::vector<uint8_t> body(frame.begin(), frame.end() - 2);
+            uint16_t crc = calc_crc(body);
+            return frame[frame.size() - 2] == (uint8_t) (crc & 0xFF) && frame[frame.size() - 1] == (uint8_t) ((crc >> 8) & 0xFF);
+          };
+
+          auto crc_ok_len = [&](const std::vector<uint8_t> &b, int len) -> bool {
+            if (b.size() < (size_t) len) return false;
+            std::vector<uint8_t> candidate(b.begin(), b.begin() + len);
+            return crc_ok(candidate);
+          };
+
+          auto expected_len = [&](const std::vector<uint8_t> &b) -> int {
+            if (b.size() < 2) return 0;
+            uint8_t func = b[1];
+
+            if (func == 0x03 || func == 0x04) {
+              if (b.size() >= 8 && crc_ok_len(b, 8)) return 8;
+              if (b.size() < 3) return 0;
+              uint8_t byte_count = b[2];
+              if (byte_count > 0 && byte_count <= 64 && (byte_count % 2 == 0)) {
+                int len = 5 + byte_count;
+                if (b.size() >= (size_t) len) return len;
+              }
+              return 0;
+            }
+
+            if (func == 0x06) {
+              if (b.size() >= 8) return 8;
+              return 0;
+            }
+
+            if (func == 0x10) {
+              if (b.size() >= 8 && crc_ok_len(b, 8)) return 8;
+              if (b.size() < 7) return 0;
+              uint8_t byte_count = b[6];
+              if (byte_count > 0 && byte_count <= 120 && (byte_count % 2 == 0)) {
+                int len = 9 + byte_count;
+                if (b.size() >= (size_t) len) return len;
+              }
+              return 0;
+            }
+
+            if (b.size() >= 8) return 8;
+            return 0;
+          };
+
+          auto hex_frame = [](const std::vector<uint8_t> &frame) -> std::string {
+            char buf[4];
+            std::string out;
+            for (uint8_t b : frame) {
+              snprintf(buf, sizeof(buf), "%02X ", b);
+              out += buf;
+            }
+            return out;
+          };
+
+          auto is_plausible_frame_start = [](const std::vector<uint8_t> &b, size_t pos) -> bool {
+            if (pos + 1 >= b.size()) return false;
+            uint8_t addr = b[pos];
+            uint8_t func = b[pos + 1];
+            bool addr_ok = (addr == 0x1E || addr == 0x29 || addr == 0x2A || addr == 0x2B || addr == 0x33);  // v97: +0x2B (Zone 3)
+            bool func_ok = (func == 0x03 || func == 0x04 || func == 0x06 || func == 0x10);
+            return addr_ok && func_ok;
+          };
+
+          auto resync_rx_prefix = [&]() -> void {
+            if (rx.size() < 2) return;
+            if (is_plausible_frame_start(rx, 0)) return;
+
+            size_t pos = 1;
+            while (pos + 1 < rx.size() && !is_plausible_frame_start(rx, pos)) {
+              pos++;
+            }
+
+            if (pos + 1 < rx.size()) {
+              // Discard junk before the real frame start, e.g. 6B FF DF AD F7 FD B5 or FF FF EF F0.
+              rx.erase(rx.begin(), rx.begin() + pos);
+            } else if (rx.size() > 16) {
+              // Don't let pure noise without a valid start build a huge buffer.
+              rx.erase(rx.begin(), rx.end() - 1);
+            }
+          };
+
+          auto emulator_29_enabled = [&]() -> bool {
+            // v62: slave model - dd_active_commands no longer required (old active write).
+            return id(dd_enable_replies) && id(dd_emulate_29_diag);
+          };
+
+          auto emulator_33_enabled = [&]() -> bool {
+            // v50: auto Dominus 0x33 emulator active only after a deliberate enable.
+            // Do not enable alongside a physical Dominus, to avoid reply collisions.
+            return id(dd_enable_replies) && id(dd_emulate_33_diag);
+          };
+
+          // v97: Zone 2 (0x2A) and 3 (0x2B) panels - active only after enabling their switches.
+          // Multiple panels can coexist (different addresses); only Dominus 0x33 excludes panels.
+          auto emulator_2a_enabled = [&]() -> bool {
+            return id(dd_enable_replies) && id(dd_emulate_2a_diag);
+          };
+          auto emulator_2b_enabled = [&]() -> bool {
+            return id(dd_enable_replies) && id(dd_emulate_2b_diag);
+          };
+
+          // v70: Zone 1 schedule (chrono) controlled from HA (instead of constants from a dump).
+          // 2310-2347 = 4 profile dzienne cal1-4 (po 4 fascia on/off), 2410-2416 = profil
+          // per weekday. Register time: hi byte = hour, lo byte = minute
+          // (06:00 -> 6*256 = 1536). Serwowane identycznie dla 0x33 i 0x29 z tych encji.
+          auto chrono_reg_value = [&](uint16_t reg) -> int {
+            switch (reg) {
+              case 2310: return id(dt_cal1_f1_on).hour * 256 + id(dt_cal1_f1_on).minute;
+              case 2311: return id(dt_cal1_f1_off).hour * 256 + id(dt_cal1_f1_off).minute;
+              case 2312: return id(dt_cal1_f2_on).hour * 256 + id(dt_cal1_f2_on).minute;
+              case 2313: return id(dt_cal1_f2_off).hour * 256 + id(dt_cal1_f2_off).minute;
+              case 2314: return id(dt_cal1_f3_on).hour * 256 + id(dt_cal1_f3_on).minute;
+              case 2315: return id(dt_cal1_f3_off).hour * 256 + id(dt_cal1_f3_off).minute;
+              case 2316: return id(dt_cal1_f4_on).hour * 256 + id(dt_cal1_f4_on).minute;
+              case 2317: return id(dt_cal1_f4_off).hour * 256 + id(dt_cal1_f4_off).minute;
+              case 2320: return id(dt_cal2_f1_on).hour * 256 + id(dt_cal2_f1_on).minute;
+              case 2321: return id(dt_cal2_f1_off).hour * 256 + id(dt_cal2_f1_off).minute;
+              case 2322: return id(dt_cal2_f2_on).hour * 256 + id(dt_cal2_f2_on).minute;
+              case 2323: return id(dt_cal2_f2_off).hour * 256 + id(dt_cal2_f2_off).minute;
+              case 2324: return id(dt_cal2_f3_on).hour * 256 + id(dt_cal2_f3_on).minute;
+              case 2325: return id(dt_cal2_f3_off).hour * 256 + id(dt_cal2_f3_off).minute;
+              case 2326: return id(dt_cal2_f4_on).hour * 256 + id(dt_cal2_f4_on).minute;
+              case 2327: return id(dt_cal2_f4_off).hour * 256 + id(dt_cal2_f4_off).minute;
+              case 2330: return id(dt_cal3_f1_on).hour * 256 + id(dt_cal3_f1_on).minute;
+              case 2331: return id(dt_cal3_f1_off).hour * 256 + id(dt_cal3_f1_off).minute;
+              case 2332: return id(dt_cal3_f2_on).hour * 256 + id(dt_cal3_f2_on).minute;
+              case 2333: return id(dt_cal3_f2_off).hour * 256 + id(dt_cal3_f2_off).minute;
+              case 2334: return id(dt_cal3_f3_on).hour * 256 + id(dt_cal3_f3_on).minute;
+              case 2335: return id(dt_cal3_f3_off).hour * 256 + id(dt_cal3_f3_off).minute;
+              case 2336: return id(dt_cal3_f4_on).hour * 256 + id(dt_cal3_f4_on).minute;
+              case 2337: return id(dt_cal3_f4_off).hour * 256 + id(dt_cal3_f4_off).minute;
+              case 2340: return id(dt_cal4_f1_on).hour * 256 + id(dt_cal4_f1_on).minute;
+              case 2341: return id(dt_cal4_f1_off).hour * 256 + id(dt_cal4_f1_off).minute;
+              case 2342: return id(dt_cal4_f2_on).hour * 256 + id(dt_cal4_f2_on).minute;
+              case 2343: return id(dt_cal4_f2_off).hour * 256 + id(dt_cal4_f2_off).minute;
+              case 2344: return id(dt_cal4_f3_on).hour * 256 + id(dt_cal4_f3_on).minute;
+              case 2345: return id(dt_cal4_f3_off).hour * 256 + id(dt_cal4_f3_off).minute;
+              case 2346: return id(dt_cal4_f4_on).hour * 256 + id(dt_cal4_f4_on).minute;
+              case 2347: return id(dt_cal4_f4_off).hour * 256 + id(dt_cal4_f4_off).minute;
+              case 2410: return (int) id(sel_weekday_1).active_index().value_or(0) + 1;
+              case 2411: return (int) id(sel_weekday_2).active_index().value_or(0) + 1;
+              case 2412: return (int) id(sel_weekday_3).active_index().value_or(0) + 1;
+              case 2413: return (int) id(sel_weekday_4).active_index().value_or(0) + 1;
+              case 2414: return (int) id(sel_weekday_5).active_index().value_or(0) + 1;
+              case 2415: return (int) id(sel_weekday_6).active_index().value_or(0) + 1;
+              case 2416: return (int) id(sel_weekday_7).active_index().value_or(0) + 1;
+              case 2420: return (int) id(sel_weekday_z2_1).active_index().value_or(0) + 1;
+              case 2421: return (int) id(sel_weekday_z2_2).active_index().value_or(0) + 1;
+              case 2422: return (int) id(sel_weekday_z2_3).active_index().value_or(0) + 1;
+              case 2423: return (int) id(sel_weekday_z2_4).active_index().value_or(0) + 1;
+              case 2424: return (int) id(sel_weekday_z2_5).active_index().value_or(0) + 1;
+              case 2425: return (int) id(sel_weekday_z2_6).active_index().value_or(0) + 1;
+              case 2426: return (int) id(sel_weekday_z2_7).active_index().value_or(0) + 1;
+              case 2430: return (int) id(sel_weekday_z3_1).active_index().value_or(0) + 1;
+              case 2431: return (int) id(sel_weekday_z3_2).active_index().value_or(0) + 1;
+              case 2432: return (int) id(sel_weekday_z3_3).active_index().value_or(0) + 1;
+              case 2433: return (int) id(sel_weekday_z3_4).active_index().value_or(0) + 1;
+              case 2434: return (int) id(sel_weekday_z3_5).active_index().value_or(0) + 1;
+              case 2435: return (int) id(sel_weekday_z3_6).active_index().value_or(0) + 1;
+              case 2436: return (int) id(sel_weekday_z3_7).active_index().value_or(0) + 1;
+              case 2490: return (int) id(sel_dhw_weekday_1).active_index().value_or(0) + 1;
+              case 2491: return (int) id(sel_dhw_weekday_2).active_index().value_or(0) + 1;
+              case 2492: return (int) id(sel_dhw_weekday_3).active_index().value_or(0) + 1;
+              case 2493: return (int) id(sel_dhw_weekday_4).active_index().value_or(0) + 1;
+              case 2494: return (int) id(sel_dhw_weekday_5).active_index().value_or(0) + 1;
+              case 2495: return (int) id(sel_dhw_weekday_6).active_index().value_or(0) + 1;
+              case 2496: return (int) id(sel_dhw_weekday_7).active_index().value_or(0) + 1;
+              default: return 0;
+            }
+          };
+
+          auto emu29_value = [&](uint16_t reg) -> int {
+            // Safe default values based on the real 0x29/Zone 1 map.
+            // v21's goal is the presence of panel 0x29, not full control.
+            switch (reg) {
+              case REG_MODE: return id(operating_mode_raw);
+              case 2001: return 8;
+              case 2002: return 0;
+              case 2005: return id(ha_room_temp_raw);       // v62: temp pomieszczenia z HA
+              case 2006: return id(ha_room_humidity_raw);   // v62: humidity from HA
+              case REG_ZONE1_STATUS: return 4;
+              case REG_ZONE1_TEMP_OLD: return id(ha_room_temp_raw);  // v62: temp z HA (kopia 2011)
+              case 2012: return 0;
+              case REG_ZONE1_SETPOINT: return id(zone1_setpoint_raw);
+              case REG_ZONE1_MAX: return 300;
+              case REG_ZONE1_OFFSET: return id(zone1_offset_raw);
+              case 2090: return 4;
+              case REG_DHW_SETPOINT: return id(cwu_setpoint_raw);
+              case 2100: return 0;
+              case 2101: return 0;
+              case 2102: return 0;
+              case 2103: return 0;
+
+              case REG_COMFORT_HEAT: return id(dominus_comfort_heat_raw);
+              case REG_ECO_HEAT: return id(dominus_eco_heat_raw);
+              case REG_COMFORT_COOL: return id(dominus_comfort_cool_raw);
+              case REG_ECO_COOL_COPY: return id(dominus_eco_cool_raw);
+              case REG_HUMIDITY: return id(dominus_humidity_raw);
+              case REG_SET_FLOW: return id(dominus_set_flow_raw);
+              case REG_ZONE1_MAX_COPY: return 300;
+              case REG_ZONE1_OFFSET_COPY: return id(zone1_offset_raw);
+
+              case 2290: return id(cwu_setpoint_raw);
+              case REG_DHW_SETPOINT_COPY_1: return id(cwu_setpoint_raw);
+              case REG_DHW_SETPOINT_COPY_2: return id(cwu_setpoint_raw);
+              case REG_DHW_TEMP_COPY_2293: return id(dhw_temp_raw) > 0 ? id(dhw_temp_raw) : 482;
+              case 2294: return 0;
+              case 2300: return id(pdu_29_2300_raw) != 0 ? id(pdu_29_2300_raw) : 14101;
+              case 2302: return id(pdu_29_2302_raw) != 0 ? id(pdu_29_2302_raw) : 5638;
+              case 2303: return id(pdu_29_2303_raw) > 0 ? id(pdu_29_2303_raw) : 2026;
+
+              case 2310: case 2311: case 2312: case 2313:
+              case 2314: case 2315: case 2316: case 2317:
+              case 2320: case 2321: case 2322: case 2323:
+              case 2324: case 2325: case 2326: case 2327:
+              case 2330: case 2331: case 2332: case 2333:
+              case 2334: case 2335: case 2336: case 2337:
+              case 2340: case 2341: case 2342: case 2343:
+              case 2344: case 2345: case 2346: case 2347:
+              case 2410: case 2411: case 2412: case 2413:
+              case 2414: case 2415: case 2416:
+              case 2420: case 2421: case 2422: case 2423:
+              case 2424: case 2425: case 2426:
+              case 2430: case 2431: case 2432: case 2433:
+              case 2434: case 2435: case 2436:
+                return chrono_reg_value(reg);
+
+              case 2490: case 2491: case 2492: case 2493:
+              case 2494: case 2495: case 2496:
+                return chrono_reg_value(reg);
+
+              case REG_ECO_COOL: return id(dominus_eco_cool_raw);
+              case REG_OUTSIDE_TEMP: return id(outside_temp_raw) > 0 ? id(outside_temp_raw) : 167;
+              case 3003: return 0;
+              case REG_ZONE1_TEMP_COPY: return id(ha_room_temp_raw);  // v62: temp z HA (kopia 3009)
+              case 3010: return id(ha_room_humidity_raw);             // v62: humidity from HA (copy of 3010)
+              case 3011: return id(pdu_29_3011_raw) != 0 ? id(pdu_29_3011_raw) : 349;
+              case 3012: return id(pdu_29_3012_raw) != 0 ? id(pdu_29_3012_raw) : 349;
+              case 3013: return id(pdu_29_3013_raw) != 0 ? id(pdu_29_3013_raw) : 345;
+              case 3014: return id(pdu_29_3014_raw) != 0 ? id(pdu_29_3014_raw) : 391;
+              case REG_DHW_SETPOINT_COPY_3: return id(cwu_setpoint_raw);
+              case REG_DHW_TEMP: return id(dhw_temp_raw) > 0 ? id(dhw_temp_raw) : 482;
+              case 3031: return 600;
+              case 3042: return 201;
+              case 6102: return 0;
+              case 6105: return 0;
+              case 6107: return 1;
+              case 6150: return 1;
+              default: return 0;
+            }
+          };
+
+          auto emu33_value = [&](uint16_t reg) -> int {
+            // Safe Dominus 0x33 map from real logs.
+            switch (reg) {
+              case REG_MODE: return id(operating_mode_raw);
+              case 2001: return 8;
+              case 2002: return 0;
+              case REG_ZONE1_STATUS: return 4;
+              case REG_ZONE1_TEMP_OLD: return 32767;
+              case 2012: return 0;
+              case REG_ZONE1_SETPOINT: return id(zone1_setpoint_raw);
+              case REG_ZONE1_MAX: return 300;
+              case REG_ZONE1_OFFSET: return id(zone1_offset_raw);
+              case REG_DHW_SETPOINT: return id(cwu_setpoint_raw);
+              case 2100: return 0;
+              case 2101: return 0;
+
+              case REG_COMFORT_HEAT: return id(dominus_comfort_heat_raw);
+              case REG_ECO_HEAT: return id(dominus_eco_heat_raw);
+              case REG_COMFORT_COOL: return id(dominus_comfort_cool_raw);
+              case REG_ECO_COOL_COPY: return id(dominus_eco_cool_raw);
+              case REG_HUMIDITY: return id(dominus_humidity_raw);
+              case REG_SET_FLOW: return id(dominus_set_flow_raw);
+              // v61 anti-flicker: the boiler reads 2214 count5 (2214..2218), and 2218 is a COPY of the offset
+              // of Zone 1 (a real Dominus returns the same as 2017 there, e.g. -10). Previously 0 ->
+              // niespojnosc 2017 vs 2218 = "miganie o jeden". Teraz spojnie z 2017.
+              case REG_ZONE1_MAX_COPY: return id(zone1_offset_raw);
+              case REG_ZONE1_OFFSET_COPY: return id(zone1_offset_raw);
+
+              case 2310: case 2311: case 2312: case 2313:
+              case 2314: case 2315: case 2316: case 2317:
+              case 2320: case 2321: case 2322: case 2323:
+              case 2324: case 2325: case 2326: case 2327:
+              case 2330: case 2331: case 2332: case 2333:
+              case 2334: case 2335: case 2336: case 2337:
+              case 2340: case 2341: case 2342: case 2343:
+              case 2344: case 2345: case 2346: case 2347:
+              case 2410: case 2411: case 2412: case 2413:
+              case 2414: case 2415: case 2416:
+              case 2420: case 2421: case 2422: case 2423:
+              case 2424: case 2425: case 2426:
+              case 2430: case 2431: case 2432: case 2433:
+              case 2434: case 2435: case 2436:
+              case 2490: case 2491: case 2492: case 2493:
+              case 2494: case 2495: case 2496:
+                return chrono_reg_value(reg);
+
+              case REG_OUTSIDE_TEMP: return id(outside_temp_raw) > 0 ? id(outside_temp_raw) : 207;
+              case REG_DHW_TEMP: return id(dhw_temp_raw) > 0 ? id(dhw_temp_raw) : 454;
+              case 3031: return 60;
+              case 4199: return 1;
+              default: return 0;
+            }
+          };
+
+          // v97: Zone 2/3 panel values (0x2A/0x2B). The SAME registers as panel 0x29, but the
+          // room values (temp/humidity) and settings (setpoint/offset) come from THAT zone's globals. The rest
+          // (tryb, chrono, komfort/eko, CWU, daty, wersja) wspolna -> delegacja do emu29_value.
+          auto emu_zone_value = [&](uint16_t reg, uint8_t zaddr, int temp_raw, int hum_raw, int sp_raw, int off_raw) -> int {
+            bool z2 = (zaddr == 0x2A);  // v102: 0x2A=Zone 2, 0x2B=Zone 3
+            switch (reg) {
+              case 2005: case REG_ZONE1_TEMP_OLD: case REG_ZONE1_TEMP_COPY: return temp_raw;  // 2005/2011/3009
+              case 2006: case 3010: return hum_raw;
+              case REG_ZONE1_SETPOINT: return sp_raw;                                          // 2015
+              case REG_ZONE1_OFFSET: case REG_ZONE1_OFFSET_COPY: return off_raw;               // 2017/2219
+              // v102: per-zone "Manage Zone" settings (Set Comfort/Eco Heat/Cool, humidity U08/U18, Set Flow)
+              case REG_COMFORT_HEAT: return z2 ? id(dominus_comfort_heat_z2_raw) : id(dominus_comfort_heat_z3_raw);
+              case REG_ECO_HEAT:     return z2 ? id(dominus_eco_heat_z2_raw)     : id(dominus_eco_heat_z3_raw);
+              case REG_COMFORT_COOL: return z2 ? id(dominus_comfort_cool_z2_raw) : id(dominus_comfort_cool_z3_raw);
+              case REG_ECO_COOL_COPY: return z2 ? id(dominus_eco_cool_z2_raw)    : id(dominus_eco_cool_z3_raw);
+              case REG_HUMIDITY:     return z2 ? id(dominus_humidity_z2_raw)     : id(dominus_humidity_z3_raw);
+              case REG_SET_FLOW:     return z2 ? id(dominus_set_flow_z2_raw)     : id(dominus_set_flow_z3_raw);
+              default: return emu29_value(reg);
+            }
+          };
+
+          auto rs485_send_v48 = [&](const std::vector<uint8_t> &data, const char *label) {
+            // v96 SAFETY: 0x1E (addr 30, pump machine room) is a REAL device on the bus.
+            // The emulator NEVER transmits on 0x1E (RX/monitor only). Hard guard: if some future
+            // path tries to TX on 0x1E -> we block it and log an error, to avoid colliding with the machine room.
+            if (!data.empty() && data[0] == 0x1E) {
+              ESP_LOGE("dd_rs485", "BEZPIECZNIK v96: zablokowano TX na 0x1E (maszynownia) label=%s - emulator nie nadaje na adres 30", label);
+              return;
+            }
+            // v48 Isolated: shared function for emu29; Dominus 0x33 in this version has manual TX only.
+            // LOW = RX/idle, HIGH = TX. At 9600 8E1 a 9-byte frame takes ~10.3 ms, so we hold DE ~12 ms.
+            // No delay() before TX; just a short DE pre-drive so the transceiver switches direction.
+            gpio_set_level(GPIO_NUM_23, 1);
+            delayMicroseconds(120);
+            id(dd_uart).write_array(data.data(), data.size());
+            id(dd_uart).flush();
+            delayMicroseconds(12000);
+            gpio_set_level(GPIO_NUM_23, 0);
+            id(dd_last_tx_ms) = millis();
+            id(dd_emu_29_auto_tx_count)++;
+            id(dd_emu_29_auto_tx_last_ms) = id(dd_last_tx_ms);
+            ESP_LOGW("dd_rs485", "v48 IMMEDIATE RTU-HOLD TX label=%s len=%u frame=%s", label, (unsigned) data.size(), hex_frame(data).c_str());
+          };
+
+          auto send_emu29_read03_response = [&](uint16_t start, uint16_t count) {
+            if (count == 0 || count > 40) {
+              ESP_LOGW("dd_emu_29", "Nie odpowiadam READ03 0x29 start=%u count=%u - count poza limitem", start, count);
+              return;
+            }
+
+            std::vector<uint8_t> resp;
+            resp.push_back(0x29);
+            resp.push_back(0x03);
+            resp.push_back((uint8_t) (count * 2));
+
+            std::string values_json = "[";
+            for (uint16_t i = 0; i < count; i++) {
+              if (i > 0) values_json += ",";
+              uint16_t reg = start + i;
+              int value = emu29_value(reg);
+              // v29 diagnostic override: for the most important presence query
+              // we return exactly the values from a real panel captured in the log:
+              // req 29 03 07 D5 00 02 D2 AF -> resp 29 03 04 00 E9 00 3C 83 D4
+              // czyli 2005=233 (23.3°C), 2006=60 (%).
+              if (start == 2005 && count == 2) {
+                if (reg == 2005) value = id(ha_room_temp_raw);      // v62: temp pomieszczenia z HA
+                if (reg == 2006) value = id(ha_room_humidity_raw);  // v62: humidity from HA
+              }
+              uint16_t uvalue = (uint16_t) value;
+              resp.push_back((uvalue >> 8) & 0xFF);
+              resp.push_back(uvalue & 0xFF);
+              values_json += std::to_string((int16_t) uvalue);
+            }
+            values_json += "]";
+
+            uint16_t crc = calc_crc(resp);
+            resp.push_back(crc & 0xFF);
+            resp.push_back((crc >> 8) & 0xFF);
+
+            rs485_send_v48(resp, "emu29_read03_resp");
+            id(dd_emu_29_read_count)++;
+            id(dd_emu_29_last_ms) = millis();
+            id(dd_last_29_read_ms) = millis();  // v93: online = ODPOWIEDZIELISMY jako panel 0x29
+
+            ESP_LOGW("dd_emu_29", "v48 immediate exact-real-2005 emu READ03 resp addr=0x29 start=%u count=%u frame=%s", start, count, hex_frame(resp).c_str());
+          };
+
+          auto send_emu29_write06_ack = [&](const std::vector<uint8_t> &req, uint16_t reg, int value) {
+            static uint32_t last_ack_ms = 0;
+            static uint16_t last_reg = 0;
+            static int last_value = 0;
+            uint32_t now_ack = millis();
+            if (last_reg == reg && last_value == value && (now_ack - last_ack_ms) < 100) {
+              ESP_LOGD("dd_emu_29", "Pomijam prawdopodobne echo własnego WRITE06 ACK reg=%u value=%d", reg, value);
+              return;
+            }
+            last_ack_ms = now_ack;
+            last_reg = reg;
+            last_value = value;
+
+            rs485_send_v48(req, "emu29_write06_ack");
+            id(dd_emu_29_write_count)++;
+            id(dd_emu_29_last_ms) = millis();
+            ESP_LOGW("dd_emu_29", "TX emu WRITE06 ACK addr=0x29 reg=%u value=%d frame=%s", reg, value, hex_frame(req).c_str());
+          };
+
+          auto send_emu29_write10_ack = [&](uint16_t start, uint16_t count) {
+            std::vector<uint8_t> resp = {0x29, 0x10, (uint8_t) ((start >> 8) & 0xFF), (uint8_t) (start & 0xFF), (uint8_t) ((count >> 8) & 0xFF), (uint8_t) (count & 0xFF)};
+            uint16_t crc = calc_crc(resp);
+            resp.push_back(crc & 0xFF);
+            resp.push_back((crc >> 8) & 0xFF);
+
+            rs485_send_v48(resp, "emu29_write10_ack");
+            id(dd_emu_29_write_count)++;
+            id(dd_emu_29_last_ms) = millis();
+            ESP_LOGW("dd_emu_29", "TX emu WRITE10 ACK addr=0x29 start=%u count=%u frame=%s", start, count, hex_frame(resp).c_str());
+          };
+
+          // v97: serving Zone 2/3 panels (0x2A/0x2B). Uses the same proven TX routine
+          // (rs485_send_v48, DE-hold). "online" (dd_last_2a/2b) counted from READ REPLIES (like 0x29).
+          auto send_emu_zone_read03 = [&](uint8_t zaddr, uint16_t start, uint16_t count,
+                                          int temp_raw, int hum_raw, int sp_raw, int off_raw) {
+            if (count == 0 || count > 40) {
+              ESP_LOGW("dd_emu_z", "Nie odpowiadam READ03 0x%02X start=%u count=%u - count poza limitem", zaddr, start, count);
+              return;
+            }
+            std::vector<uint8_t> resp;
+            resp.push_back(zaddr);
+            resp.push_back(0x03);
+            resp.push_back((uint8_t) (count * 2));
+            for (uint16_t i = 0; i < count; i++) {
+              uint16_t reg = start + i;
+              int value = emu_zone_value(reg, zaddr, temp_raw, hum_raw, sp_raw, off_raw);
+              if (start == 2005 && count == 2) {          // most important panel presence query
+                if (reg == 2005) value = temp_raw;
+                if (reg == 2006) value = hum_raw;
+              }
+              uint16_t uvalue = (uint16_t) value;
+              resp.push_back((uvalue >> 8) & 0xFF);
+              resp.push_back(uvalue & 0xFF);
+            }
+            uint16_t crc = calc_crc(resp);
+            resp.push_back(crc & 0xFF);
+            resp.push_back((crc >> 8) & 0xFF);
+
+            rs485_send_v48(resp, "emu_zone_read03");
+            if (zaddr == 0x2A) id(dd_last_2a_read_ms) = millis();
+            else if (zaddr == 0x2B) id(dd_last_2b_read_ms) = millis();
+            ESP_LOGW("dd_emu_z", "emu READ03 resp addr=0x%02X start=%u count=%u frame=%s", zaddr, start, count, hex_frame(resp).c_str());
+          };
+
+          auto send_emu_zone_write06_ack = [&](uint8_t zaddr, const std::vector<uint8_t> &req, uint16_t reg, int value) {
+            rs485_send_v48(req, "emu_zone_write06_ack");   // ACK 0x06 = echo of the addr/reg/value frame
+            ESP_LOGW("dd_emu_z", "TX emu WRITE06 ACK addr=0x%02X reg=%u value=%d", zaddr, reg, value);
+          };
+
+          auto send_emu_zone_write10_ack = [&](uint8_t zaddr, uint16_t start, uint16_t count) {
+            std::vector<uint8_t> resp = {zaddr, 0x10,
+              (uint8_t) ((start >> 8) & 0xFF), (uint8_t) (start & 0xFF),
+              (uint8_t) ((count >> 8) & 0xFF), (uint8_t) (count & 0xFF)};
+            uint16_t crc = calc_crc(resp);
+            resp.push_back(crc & 0xFF);
+            resp.push_back((crc >> 8) & 0xFF);
+            rs485_send_v48(resp, "emu_zone_write10_ack");
+            ESP_LOGW("dd_emu_z", "TX emu WRITE10 ACK addr=0x%02X start=%u count=%u", zaddr, start, count);
+          };
+
+          auto rs485_send_33_v50 = [&](const std::vector<uint8_t> &data, const char *label) {
+            // v96 SAFETY: 0x1E (addr 30, pump machine room) is a REAL device on the bus.
+            // The emulator NEVER transmits on 0x1E (RX/monitor only). Hard guard: if some future
+            // path tries to TX on 0x1E -> we block it and log an error, to avoid colliding with the machine room.
+            if (!data.empty() && data[0] == 0x1E) {
+              ESP_LOGE("dd_rs485", "BEZPIECZNIK v96: zablokowano TX na 0x1E (maszynownia) label=%s - emulator nie nadaje na adres 30", label);
+              return;
+            }
+            // v55 IMMEDIATE PROVEN TX: kopia 1:1 udowodnionej rutyny rs485_send_v48 (0x29) oraz
+            // the manual 0x33 button - these DO transmit visibly (sniffer a11798 catches 29 03 04 00 E9
+            // oraz reczny 33 10 ... 14 97). KLUCZ: ZADNEGO delay()/busy-wait PRZED TX.
+            // v53 (delay(22) yield) and v54 (delayMicroseconds(22000)) had a pre-delay and the frames
+            // never reached the bus -> the pre-delay broke transmission. Panel 0x29 replies IMMEDIATELY
+            // and the boiler accepts it - so 0x33 also replies immediately.
+            // gpio HIGH -> short pre-drive -> write+flush -> hold ~ frame time -> gpio LOW.
+            gpio_set_level(GPIO_NUM_23, 1);
+            delayMicroseconds(800);
+            id(dd_uart).write_array(data.data(), data.size());
+            id(dd_uart).flush();
+            delayMicroseconds(15000);
+            gpio_set_level(GPIO_NUM_23, 0);
+
+            id(dd_last_tx_ms) = millis();
+            id(dd_emu_33_ack_count)++;
+            id(dd_emu_33_last_ms) = id(dd_last_tx_ms);
+
+            ESP_LOGW("dd_emu_33", "v55 TX immediate-proven %s len=%u frame=%s", label, (unsigned) data.size(), hex_frame(data).c_str());
+          };
+
+          auto send_emu33_read_response = [&](uint8_t req_func, uint16_t start, uint16_t count) {
+            if (count == 0 || count > 40) {
+              ESP_LOGW("dd_emu_33", "v51 skip READ resp 0x33 start=%u count=%u - count poza limitem", start, count);
+              return;
+            }
+
+            std::vector<uint8_t> resp;
+            resp.push_back(0x33);
+            resp.push_back(req_func);
+            resp.push_back((uint8_t) (count * 2));
+
+            std::string values_json = "[";
+            for (uint16_t i = 0; i < count; i++) {
+              if (i > 0) values_json += ",";
+              uint16_t reg = start + i;
+              int value = emu33_value(reg);
+              uint16_t uvalue = (uint16_t) value;
+              resp.push_back((uvalue >> 8) & 0xFF);
+              resp.push_back(uvalue & 0xFF);
+              values_json += std::to_string((int16_t) uvalue);
+            }
+            values_json += "]";
+
+            uint16_t crc = calc_crc(resp);
+            resp.push_back(crc & 0xFF);
+            resp.push_back((crc >> 8) & 0xFF);
+
+            rs485_send_33_v50(resp, "emu33_read_resp");
+            id(dd_last_33_read_ms) = millis();  // v93: online = ODPOWIEDZIELISMY jako Dominus 0x33
+          };
+
+          auto send_emu33_write06_ack = [&](const std::vector<uint8_t> &req, uint16_t reg, int value) {
+            static uint32_t last_ack_ms = 0;
+            static uint16_t last_reg = 0;
+            static int last_value = 0;
+            uint32_t now_ack = millis();
+            if (last_reg == reg && last_value == value && (now_ack - last_ack_ms) < 120) {
+              ESP_LOGD("dd_emu_33", "v51 skip echo własnego/duplikatu WRITE06 ACK reg=%u value=%d", reg, value);
+              return;
+            }
+            last_ack_ms = now_ack;
+            last_reg = reg;
+            last_value = value;
+
+            rs485_send_33_v50(req, "emu33_write06_ack");
+          };
+
+          auto send_emu33_write10_ack = [&](uint16_t start, uint16_t count) {
+            std::vector<uint8_t> resp = {0x33, 0x10,
+              (uint8_t) ((start >> 8) & 0xFF), (uint8_t) (start & 0xFF),
+              (uint8_t) ((count >> 8) & 0xFF), (uint8_t) (count & 0xFF)};
+            uint16_t crc = calc_crc(resp);
+            resp.push_back(crc & 0xFF);
+            resp.push_back((crc >> 8) & 0xFF);
+
+            rs485_send_33_v50(resp, "emu33_write10_ack");
+          };
+
+          auto is_known_pdu = [&](uint8_t addr, uint16_t reg) -> bool {
+            if (addr == 0x1E) {
+              switch (reg) {
+                case 1:
+                case 2:
+                case 3:
+                case 4:
+                case 5:
+                case 6:
+                case 10:
+                case 11:
+                case 12:
+                case 13:
+                case 14:
+                case 15:
+                case 16:
+                case 17:
+                case 18:
+                case 19:
+                case 20:
+                case 21:
+                case 22:
+                case 23:
+                case 24:
+                case 25:
+                case 26:
+                case 27:
+                case 28:
+                case 29:
+                case 36:
+                case 37:
+                case 38:
+                case 40:
+                case 41:
+                case 42:
+                case 44:
+                case 45:
+                case 46:
+                  return true;
+                default:
+                  return false;
+              }
+            }
+
+            if (addr == 0x29 || addr == 0x33) {
+              switch (reg) {
+                case REG_MODE:
+                case 2001:
+                case 2002:
+                case 2005:
+                case 2006:
+                case REG_ZONE1_STATUS:
+                case REG_ZONE1_TEMP_OLD:
+                case REG_ZONE1_SETPOINT:
+                case REG_ZONE1_MAX:
+                case REG_ZONE1_OFFSET:
+                case REG_DHW_SETPOINT:
+                case 2090:
+                case 2100:
+                case 2103:
+                case REG_COMFORT_HEAT:
+                case REG_ECO_HEAT:
+                case REG_COMFORT_COOL:
+                case REG_ECO_COOL_COPY:
+                case REG_HUMIDITY:
+                case REG_SET_FLOW:
+                case REG_ZONE1_MAX_COPY:
+                case REG_ZONE1_OFFSET_COPY:
+                case 2290:
+                case REG_DHW_SETPOINT_COPY_1:
+                case REG_DHW_SETPOINT_COPY_2:
+                case REG_DHW_TEMP_COPY_2293:
+                case 2294:
+                case 2300:
+                case 2302:
+                case 2303:
+                case 2310:
+                case 2311:
+                case 2312:
+                case 2313:
+                case 2314:
+                case 2315:
+                case 2316:
+                case 2317:
+                case 2320:
+                case 2321:
+                case 2322:
+                case 2323:
+                case 2324:
+                case 2325:
+                case 2326:
+                case 2327:
+                case 2330:
+                case 2331:
+                case 2332:
+                case 2333:
+                case 2334:
+                case 2335:
+                case 2336:
+                case 2337:
+                case 2340:
+                case 2341:
+                case 2342:
+                case 2343:
+                case 2344:
+                case 2345:
+                case 2346:
+                case 2347:
+                case 2410:
+                case 2411:
+                case 2412:
+                case 2413:
+                case 2414:
+                case 2415:
+                case 2416:
+                case 2490:
+                case 2491:
+                case 2492:
+                case 2493:
+                case 2494:
+                case 2495:
+                case 2496:
+                case REG_ECO_COOL:
+                case REG_OUTSIDE_TEMP:
+                case 3003:
+                case REG_ZONE1_TEMP_COPY:
+                case 3010:
+                case 3011:
+                case 3012:
+                case 3013:
+                case 3014:
+                case REG_DHW_SETPOINT_COPY_3:
+                case REG_DHW_TEMP:
+                case 3031:
+                case 3042:
+                case 4199:
+                case 6102:
+                case 6105:
+                case 6107:
+                case 6150:
+                  return true;
+                default:
+                  return false;
+              }
+            }
+
+            return false;
+          };
+
+          auto valid_temp_x10 = [](int value) -> bool {
+            if (value == 32767 || value == -32768 || value == -1) return false;
+            if (value < -400 || value > 900) return false;
+            return true;
+          };
+
+          auto handle_pdu = [&](uint8_t addr, uint8_t func, uint16_t reg, int value, const char *source) {
+            // v71: boiler fault monitoring. The boiler broadcasts the fault code in 2100 (0=none) and
+            // 2101 (reset/flags) to 0x33 and 0x29 (confirmed by capture). We capture regardless
+            // of emulation mode - works in pure sniffing too. Descriptions: anomalies[] (LBL).
+            if (reg == 2100) id(dd_err_code) = value;
+            else if (reg == 2101) id(dd_err_2101) = value;
+            else if (reg == 2010) {
+              // v73/v97: per-zone status/phase. 0x2A->Zone 2, 0x2B->Zone 3, rest (0x29/0x33)->Zone 1.
+              if (addr == 0x2A) id(dd_zone2_status_raw) = value;
+              else if (addr == 0x2B) id(dd_zone3_status_raw) = value;
+              else id(dd_zone1_status_raw) = value;
+            }
+            // ------------------------------------------------------------
+            // 0x1E - technical / different register spaces
+            // Ten adres ma inne znaczenie dla func 0x03, 0x04, 0x06 i 0x10.
+            // We don't publish it to HA entities, to avoid mixing values in one sensor.
+            // Kept only in logs and discovery.
+            // ------------------------------------------------------------
+            if (addr == 0x1E) {
+              // v86: 0x1E (pump machine room) - monitoring belongs to the sniffer (immergas-dd-sniffer).
+              // The emulator IGNORES 0x1E: no decode, no log, no emulation.
+              return;
+            }
+
+            // v101: "Panel" source (slot 1) for Zone 2/3 = real temp/humidity PDU of the physical panel
+            // 0x2A/0x2B (when connected and transmitting). Feeds the slot-1 buffer; when Panel selected (idx==1) -> to output.
+            if (addr == 0x2A || addr == 0x2B) {
+              bool z2 = (addr == 0x2A);
+              if (reg == 2005 || reg == REG_ZONE1_TEMP_COPY || reg == REG_ZONE1_TEMP_OLD) {
+                if (valid_temp_x10(value)) {
+                  if (z2) { id(ha_temp_raw_z2_1) = value; if (id(temp_src_z2_idx) == 1) id(ha_room_temp_2_raw) = value; }
+                  else    { id(ha_temp_raw_z3_1) = value; if (id(temp_src_z3_idx) == 1) id(ha_room_temp_3_raw) = value; }
+                }
+              } else if (reg == 2006 || reg == 3010) {
+                if (value > 0 && value <= 100) {
+                  if (z2) { id(ha_hum_raw_z2_1) = value; if (id(hum_src_z2_idx) == 1) id(ha_room_humidity_2_raw) = value; }
+                  else    { id(ha_hum_raw_z3_1) = value; if (id(hum_src_z3_idx) == 1) id(ha_room_humidity_3_raw) = value; }
+                }
+              }
+            }
+
+            // ------------------------------------------------------------
+            // Tryb pracy systemu
+            // PDU 2000 / 0x07D0:
+            // 0 = Standby, 1 = Summer/DHW, 2 = Cooling, 3 = Winter/CH+DHW
+            // 0x33 usually changes first, 0x29 is the copy/execution.
+            // ------------------------------------------------------------
+            if ((addr == 0x29 || addr == 0x33) && reg == REG_MODE) {
+              // v57: the boiler WRITES BACK the current mode -> this is the REPORTED state (for display).
+              // the REQUESTED mode (operating_mode_raw, returned on READ 2000) is OVERWRITTEN only until
+              // the user picks a mode in HA (boiler state adoption at startup, no forcing).
+              id(operating_mode_reported) = value;
+              if (!id(mode_user_set)) {
+                id(operating_mode_raw) = value;
+              }
+
+              const char *mode_name = "Nieznany";
+              if (value == 0) mode_name = "Standby";
+              else if (value == 1) mode_name = "Summer DHW";
+              else if (value == 2) mode_name = "Cooling";
+              else if (value == 3) mode_name = "Winter CH+DHW";
+
+              ESP_LOGI("dd_value", "%s Tryb pracy addr=0x%02X PDU 2000 = %d / %s", source, addr, value, mode_name);
+              return;
+            }
+
+
+            // ------------------------------------------------------------
+            // Zone 1 temperature
+            // ------------------------------------------------------------
+            if (addr == 0x29 && (reg == 2005 || reg == REG_ZONE1_TEMP_COPY)) {
+              if (!valid_temp_x10(value)) {
+                ESP_LOGW("dd_value", "%s addr=0x29 Zone1 temp PDU %u INVALID = %d / 0x%04X - ignoruję", source, reg, value, (uint16_t) value);
+                return;
+              }
+              id(zone1_temp_raw) = value;
+              id(zone1_temp_sensor).publish_state(value / 10.0f);
+              id(ha_temp_raw_1) = value;  // v101: "Panel" source = real PDU 2005 of the physical panel 0x29
+              if (id(temp_src_idx) == 1) id(ha_room_temp_raw) = value;
+              ESP_LOGI("dd_value", "%s addr=0x29 Zone1 temp PDU %u = %d / %.1f°C", source, reg, value, value / 10.0f);
+              return;
+            }
+
+            if (reg == REG_ZONE1_TEMP_OLD && addr != 0x2A && addr != 0x2B) {  // v103: temp 0x2A/0x2B -> blok "Panel" wyzej
+              if (!valid_temp_x10(value)) return;
+              id(zone1_temp_raw) = value;
+              id(zone1_temp_sensor).publish_state(value / 10.0f);
+              return;
+            }
+
+            // ------------------------------------------------------------
+            // Active setpoint / U03
+            // ------------------------------------------------------------
+            if (reg == REG_ZONE1_SETPOINT) {
+              if (addr == 0x2A) { id(zone2_setpoint_raw) = value; id(zone2_setpoint_number).publish_state(value / 10.0f); }
+              else if (addr == 0x2B) { id(zone3_setpoint_raw) = value; id(zone3_setpoint_number).publish_state(value / 10.0f); }
+              else { id(zone1_setpoint_raw) = value; id(zone1_setpoint_number).publish_state(value / 10.0f); }
+              ESP_LOGI("dd_value", "%s addr=0x%02X setpoint PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
+              return;
+            }
+
+            if (reg == REG_ZONE1_OFFSET || reg == REG_ZONE1_OFFSET_COPY) {
+              if (addr == 0x2A) { id(zone2_offset_raw) = value; id(zone2_offset_number).publish_state(value / 10.0f); }
+              else if (addr == 0x2B) { id(zone3_offset_raw) = value; id(zone3_offset_number).publish_state(value / 10.0f); }
+              else { id(zone1_offset_raw) = value; id(zone1_offset_number).publish_state(value / 10.0f); }
+              ESP_LOGI("dd_value", "%s addr=0x%02X offset PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
+              return;
+            }
+
+            // ------------------------------------------------------------
+            // DHW / external
+            // ------------------------------------------------------------
+            if (reg == REG_DHW_SETPOINT || reg == REG_DHW_SETPOINT_COPY_1 || reg == REG_DHW_SETPOINT_COPY_2 || reg == REG_DHW_SETPOINT_COPY_3) {
+              id(cwu_setpoint_raw) = value;
+              id(cwu_setpoint_number).publish_state(value / 10.0f);
+              ESP_LOGI("dd_value", "%s CWU setpoint/copy PDU %u = %d / %.1f°C", source, reg, value, value / 10.0f);
+              return;
+            }
+
+            if (reg == REG_DHW_TEMP) {
+              id(dhw_temp_raw) = value;
+              id(dhw_temp_sensor).publish_state(value / 10.0f);
+              ESP_LOGI("dd_value", "%s DHW temp PDU %u = %d / %.1f°C", source, reg, value, value / 10.0f);
+              return;
+            }
+
+            if (reg == REG_OUTSIDE_TEMP) {
+              id(outside_temp_raw) = value;
+              id(outside_temp_sensor).publish_state(value / 10.0f);
+              ESP_LOGI("dd_value", "%s Outside temp PDU %u = %d / %.1f°C", source, reg, value, value / 10.0f);
+              return;
+            }
+
+            // ------------------------------------------------------------
+            // Dominus - sliders/settings
+            // ------------------------------------------------------------
+            if (reg == REG_COMFORT_HEAT) {
+              if (addr == 0x2A) { id(dominus_comfort_heat_z2_raw) = value; id(number_dominus_comfort_heat_z2).publish_state(value / 10.0f); }
+              else if (addr == 0x2B) { id(dominus_comfort_heat_z3_raw) = value; id(number_dominus_comfort_heat_z3).publish_state(value / 10.0f); }
+              else { id(dominus_comfort_heat_raw) = value; id(number_dominus_comfort_heat).publish_state(value / 10.0f); }
+              ESP_LOGI("dd_value", "%s addr=0x%02X Set Comfort Heat PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
+              return;
+            }
+
+            if (reg == REG_ECO_HEAT) {
+              if (addr == 0x2A) { id(dominus_eco_heat_z2_raw) = value; id(number_dominus_eco_heat_z2).publish_state(value / 10.0f); }
+              else if (addr == 0x2B) { id(dominus_eco_heat_z3_raw) = value; id(number_dominus_eco_heat_z3).publish_state(value / 10.0f); }
+              else { id(dominus_eco_heat_raw) = value; id(number_dominus_eco_heat).publish_state(value / 10.0f); }
+              ESP_LOGI("dd_value", "%s addr=0x%02X Set Eco Heat PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
+              return;
+            }
+
+            if (reg == REG_COMFORT_COOL) {
+              if (addr == 0x2A) { id(dominus_comfort_cool_z2_raw) = value; id(number_dominus_comfort_cool_z2).publish_state(value / 10.0f); }
+              else if (addr == 0x2B) { id(dominus_comfort_cool_z3_raw) = value; id(number_dominus_comfort_cool_z3).publish_state(value / 10.0f); }
+              else { id(dominus_comfort_cool_raw) = value; id(number_dominus_comfort_cool).publish_state(value / 10.0f); }
+              ESP_LOGI("dd_value", "%s addr=0x%02X Set Comfort Cool PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
+              return;
+            }
+
+            if (reg == REG_ECO_COOL_COPY || reg == REG_ECO_COOL) {
+              if (addr == 0x2A) { id(dominus_eco_cool_z2_raw) = value; id(number_dominus_eco_cool_z2).publish_state(value / 10.0f); }
+              else if (addr == 0x2B) { id(dominus_eco_cool_z3_raw) = value; id(number_dominus_eco_cool_z3).publish_state(value / 10.0f); }
+              else { id(dominus_eco_cool_raw) = value; id(number_dominus_eco_cool).publish_state(value / 10.0f); }
+              ESP_LOGI("dd_value", "%s addr=0x%02X Set Eco Cool PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
+              return;
+            }
+
+            if (reg == REG_HUMIDITY) {
+              if (addr == 0x2A) { id(dominus_humidity_z2_raw) = value; id(number_dominus_humidity_z2).publish_state(value); }
+              else if (addr == 0x2B) { id(dominus_humidity_z3_raw) = value; id(number_dominus_humidity_z3).publish_state(value); }
+              else { id(dominus_humidity_raw) = value; id(number_dominus_humidity).publish_state(value); }
+              ESP_LOGI("dd_value", "%s addr=0x%02X Set Umidity PDU %u = %d%%", source, addr, reg, value);
+              return;
+            }
+
+            if (reg == REG_SET_FLOW) {
+              if (addr == 0x2A) { id(dominus_set_flow_z2_raw) = value; id(number_dominus_set_flow_z2).publish_state(value / 10.0f); }
+              else if (addr == 0x2B) { id(dominus_set_flow_z3_raw) = value; id(number_dominus_set_flow_z3).publish_state(value / 10.0f); }
+              else { id(dominus_set_flow_raw) = value; id(number_dominus_set_flow).publish_state(value / 10.0f); }
+              ESP_LOGI("dd_value", "%s addr=0x%02X Set Flow PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
+              return;
+            }
+
+            // ------------------------------------------------------------
+            // 0x29 diagnostics
+            // ------------------------------------------------------------
+            if (addr == 0x29 && reg == 2006) {
+              id(pdu_29_2006_raw) = value;
+              id(sensor_zone1_humidity).publish_state(value);
+              id(ha_hum_raw_1) = value;  // v101: "Panel" source = real PDU 2006 of the physical panel 0x29
+              if (id(hum_src_idx) == 1) id(ha_room_humidity_raw) = value;
+              ESP_LOGI("dd_value", "%s Wilgotność Strefy 1 PDU 2006 = %d%%", source, value);
+              return;
+            }
+            if (addr == 0x29 && reg == 3010) {
+              // v77: 3010 = copy of Zone 1 humidity; we update the main sensor only.
+              if (value > 0 && value <= 100) id(sensor_zone1_humidity).publish_state(value);
+              ESP_LOGI("dd_value", "%s Wilgotność Strefy 1 PDU 3010 = %d%%", source, value);
+              return;
+            }
+            if (addr == 0x29 && reg == 2300) {
+              id(pdu_29_2300_raw) = value;
+              ESP_LOGD("dd_value", "%s Czas/licznik sterownika raw PDU 2300 = %d / 0x%04X", source, value, (uint16_t) value);
+              return;
+            }
+            if (addr == 0x29 && reg == 2302) {
+              id(pdu_29_2302_raw) = value;
+              uint16_t raw = (uint16_t) value;
+              int day = (raw >> 8) & 0xFF;
+              int month = raw & 0xFF;
+              ESP_LOGI("dd_value", "%s Data sterownika PDU 2302 = %d / 0x%04X -> %02d.%02d", source, value, (uint16_t) value, day, month);
+              return;
+            }
+            if (addr == 0x29 && reg == 2303) {
+              id(pdu_29_2303_raw) = value;
+              ESP_LOGI("dd_value", "%s Rok sterownika PDU 2303 = %d", source, value);
+              return;
+            }
+            if (addr == 0x29 && reg == REG_DHW_TEMP_COPY_2293) { id(pdu_29_2293_raw) = value; return; }
+            if (addr == 0x29 && reg == 3011) { id(pdu_29_3011_raw) = value; return; }
+            if (addr == 0x29 && reg == 3012) { id(pdu_29_3012_raw) = value; return; }
+            if (addr == 0x29 && reg == 3013) { id(pdu_29_3013_raw) = value; return; }
+            if (addr == 0x29 && reg == 3014) { id(pdu_29_3014_raw) = value; return; }
+            if (addr == 0x29 && reg == 3031) { id(pdu_29_3031_raw) = value; id(sensor_pdu_29_3031_version).publish_state(value / 100.0f); return; }
+            if (addr == 0x29 && reg == 3042) { id(pdu_29_3042_raw) = value; id(sensor_pdu_29_3042_version).publish_state(value / 100.0f); return; }
+            if (addr == 0x2A && reg == 3042) { id(pdu_2a_version_raw) = value; id(sensor_panel2_version).publish_state(value / 100.0f); return; }
+            if (addr == 0x2B && reg == 3042) { id(pdu_2b_version_raw) = value; id(sensor_panel3_version).publish_state(value / 100.0f); return; }
+
+            if (is_known_pdu(addr, reg)) {
+              ESP_LOGD("dd_known", "%s known addr=0x%02X PDU %u = %d / 0x%04X", source, addr, reg, value, (uint16_t) value);
+              return;
+            }
+
+            ESP_LOGD("dd_unknown", "%s unknown addr=0x%02X PDU %u / 0x%04X = %d / 0x%04X", source, addr, reg, reg, value, (uint16_t) value);
+          };
+
+          bool got_rx = false;
+          while (id(dd_uart).available()) {
+            uint8_t b;
+            if (id(dd_uart).read_byte(&b)) {
+              rx.push_back(b);
+              got_rx = true;
+            }
+          }
+
+          if (got_rx) {
+            id(dd_last_rx_ms) = millis();
+          }
+
+          if (rx.size() > 256) {
+            ESP_LOGW("dd_rx", "RX buffer too large, clearing");
+            rx.clear();
+            return;
+          }
+
+          while (rx.size() >= 4) {
+            resync_rx_prefix();
+            if (rx.size() < 4) break;
+
+            int len = expected_len(rx);
+            if (len == 0) {
+              // If the buffer holds a valid start of a later frame, jump to it.
+              resync_rx_prefix();
+              if (rx.size() > 96) {
+                rx.erase(rx.begin(), rx.end() - 3);
+              }
+              break;
+            }
+            if (rx.size() < (size_t) len) break;
+
+            std::vector<uint8_t> frame(rx.begin(), rx.begin() + len);
+
+            if (!crc_ok(frame)) {
+              id(dd_last_crc_bad_ms) = millis();
+              rx.erase(rx.begin());
+              continue;
+            }
+
+            rx.erase(rx.begin(), rx.begin() + len);
+
+            uint8_t addr = frame[0];
+            uint8_t func = frame[1];
+            bool emu33_write10_ack_pre_sent = false;
+
+            // v93: "online" counted from REPLIES (the device answers), NOT from the boiler's query.
+            // Our emulation -> set in send_emu29/33_read_response; a physical device ->
+            // w galezi read-response ponizej. Poprzednio tu (zapytanie) = falszywe "polaczono".
+            // v94: 0x1E (addr 30, machine room ALWAYS present) - activity = bus alive ("Modbus connection").
+            if (addr == 0x1E) id(dd_last_1e_read_ms) = millis();
+
+            // v52: Dominus 0x33 - replies with a natural slave turnaround, before heavy logging/MQTT.
+            if (addr == 0x33 && (func == 0x03 || func == 0x04) && len == 8 && emulator_33_enabled()) {
+              uint16_t start = ((uint16_t) frame[2] << 8) | frame[3];
+              uint16_t count = ((uint16_t) frame[4] << 8) | frame[5];
+              if (func == 0x03) last_start_03[addr] = start;
+              else last_start_04[addr] = start;
+
+              send_emu33_read_response(func, start, count);
+
+              ESP_LOGI("dd_rx", "addr=0x%02X func=0x%02X len=%d crc=OK frame=%s", addr, func, len, hex_frame(frame).c_str());
+              ESP_LOGI("dd_decode", "READ req addr=0x%02X func=0x%02X start=%u / 0x%04X count=%u", addr, func, start, start, count);
+              continue;
+            }
+
+            if (addr == 0x33 && func == 0x06 && len == 8 && emulator_33_enabled()) {
+              uint16_t reg = ((uint16_t) frame[2] << 8) | frame[3];
+              uint16_t uvalue = ((uint16_t) frame[4] << 8) | frame[5];
+              int value = (int16_t) uvalue;
+              bool known_write06 = (reg == REG_OUTSIDE_TEMP || reg == REG_DHW_TEMP || reg == 3031 || reg == 4199);
+              if (known_write06) {
+                send_emu33_write06_ack(frame, reg, value);
+              }
+            }
+
+            if (addr == 0x33 && func == 0x10 && len >= 11 && emulator_33_enabled()) {
+              uint16_t start = ((uint16_t) frame[2] << 8) | frame[3];
+              uint16_t count = ((uint16_t) frame[4] << 8) | frame[5];
+              uint8_t byte_count = frame[6];
+              int values = byte_count / 2;
+              if (start == 2001 && count == 2 && values >= 2) {
+                uint16_t v0 = ((uint16_t) frame[7] << 8) | frame[8];
+                uint16_t v1 = ((uint16_t) frame[9] << 8) | frame[10];
+                if (v0 == 12 && v1 == 0) {
+                  id(dd_emu_33_probe_count)++;
+                }
+              }
+              send_emu33_write10_ack(start, count);
+              emu33_write10_ack_pre_sent = true;
+              // v56: KEY - like the 0x29 fast-path we continue IMMEDIATELY. The 0x29 path worked,
+              // tor 0x33 (v52-v55) NIE - jedyna strukturalna roznica to brak tego continue:
+              // 0x33 went on through heavy processing of the same frame in the RX loop, which
+              // apparently blocked the actual transmission. Here we exit right after the ACK.
+              continue;
+            }
+
+            // v48: if the boiler queries the emulated panel 0x29, reply IMMEDIATELY before heavy logging.
+            // The TX frame must fit the master's short reply window on D+/D-.
+            if (addr == 0x29 && func == 0x03 && len == 8 && emulator_29_enabled()) {
+              uint16_t start = ((uint16_t) frame[2] << 8) | frame[3];
+              uint16_t count = ((uint16_t) frame[4] << 8) | frame[5];
+              last_start_03[addr] = start;
+
+              send_emu29_read03_response(start, count);
+
+              ESP_LOGI("dd_rx", "addr=0x%02X func=0x%02X len=%d crc=OK frame=%s", addr, func, len, hex_frame(frame).c_str());
+              if (addr == 0x29) {
+                ESP_LOGI("dd_decode", "READ req addr=0x%02X func=0x%02X start=%u / 0x%04X count=%u", addr, func, start, start, count);
+              }
+
+              continue;
+            }
+
+            // v97: Zone 2 panel (0x2A) READ03 - fast-path like 0x29, values from Zone 2 globals.
+            if (addr == 0x2A && func == 0x03 && len == 8 && emulator_2a_enabled()) {
+              uint16_t start = ((uint16_t) frame[2] << 8) | frame[3];
+              uint16_t count = ((uint16_t) frame[4] << 8) | frame[5];
+              last_start_03[addr] = start;
+              send_emu_zone_read03(0x2A, start, count,
+                                   id(ha_room_temp_2_raw), id(ha_room_humidity_2_raw),
+                                   id(zone2_setpoint_raw), id(zone2_offset_raw));
+              ESP_LOGI("dd_rx", "addr=0x2A func=0x03 len=%d crc=OK frame=%s", len, hex_frame(frame).c_str());
+              continue;
+            }
+
+            // v97: Zone 3 panel (0x2B) READ03 - fast-path like 0x29, values from Zone 3 globals.
+            if (addr == 0x2B && func == 0x03 && len == 8 && emulator_2b_enabled()) {
+              uint16_t start = ((uint16_t) frame[2] << 8) | frame[3];
+              uint16_t count = ((uint16_t) frame[4] << 8) | frame[5];
+              last_start_03[addr] = start;
+              send_emu_zone_read03(0x2B, start, count,
+                                   id(ha_room_temp_3_raw), id(ha_room_humidity_3_raw),
+                                   id(zone3_setpoint_raw), id(zone3_offset_raw));
+              ESP_LOGI("dd_rx", "addr=0x2B func=0x03 len=%d crc=OK frame=%s", len, hex_frame(frame).c_str());
+              continue;
+            }
+
+            if (addr == 0x29) {
+              ESP_LOGI("dd_rx", "addr=0x%02X func=0x%02X len=%d crc=OK frame=%s", addr, func, len, hex_frame(frame).c_str());
+            }
+
+            if ((func == 0x03 || func == 0x04) && len == 8) {
+              uint16_t start = ((uint16_t) frame[2] << 8) | frame[3];
+              uint16_t count = ((uint16_t) frame[4] << 8) | frame[5];
+              if (func == 0x03) last_start_03[addr] = start;
+              else last_start_04[addr] = start;
+
+              if (addr == 0x29) {
+                ESP_LOGI("dd_decode", "READ req addr=0x%02X func=0x%02X start=%u / 0x%04X count=%u", addr, func, start, start, count);
+              }
+
+              continue;
+            }
+
+            if ((func == 0x03 || func == 0x04) && len >= 7) {
+              uint8_t byte_count = frame[2];
+              uint16_t start = (func == 0x03) ? last_start_03[addr] : last_start_04[addr];
+              int values = byte_count / 2;
+
+              // v93: online = a PHYSICAL device REPLIED (not our query).
+              if (addr == 0x33) id(dd_last_33_read_ms) = millis();
+              else if (addr == 0x29) id(dd_last_29_read_ms) = millis();
+              else if (addr == 0x2A) id(dd_last_2a_read_ms) = millis();
+              else if (addr == 0x2B) id(dd_last_2b_read_ms) = millis();
+
+              if (addr == 0x29) {
+                ESP_LOGI("dd_decode", "READ resp addr=0x%02X func=0x%02X start=%u values=%d", addr, func, start, values);
+              }
+
+              std::string values_json = "[";
+              for (int i = 0; i < values; i++) {
+                if (i > 0) values_json += ",";
+                uint16_t uvalue = ((uint16_t) frame[3 + i * 2] << 8) | frame[4 + i * 2];
+                int value = (int16_t) uvalue;
+                values_json += std::to_string(value);
+              }
+              values_json += "]";
+
+              for (int i = 0; i < values; i++) {
+                uint16_t reg = start + i;
+                uint16_t uvalue = ((uint16_t) frame[3 + i * 2] << 8) | frame[4 + i * 2];
+                int value = (int16_t) uvalue;
+                handle_pdu(addr, func, reg, value, "READ");
+              }
+              continue;
+            }
+
+            if (func == 0x06 && len == 8) {
+              uint16_t reg = ((uint16_t) frame[2] << 8) | frame[3];
+              uint16_t uvalue = ((uint16_t) frame[4] << 8) | frame[5];
+              int value = (int16_t) uvalue;
+
+              if (addr == 0x29) {
+                ESP_LOGW("dd_decode", "WRITE single addr=0x%02X PDU=%u / 0x%04X value=%d / 0x%04X", addr, reg, reg, value, uvalue);
+              }
+              handle_pdu(addr, func, reg, value, "WRITE06");
+
+              if (addr == 0x29 && emulator_29_enabled()) {
+                send_emu29_write06_ack(frame, reg, value);
+              }
+              if (addr == 0x2A && emulator_2a_enabled()) send_emu_zone_write06_ack(0x2A, frame, reg, value);  // v97
+              if (addr == 0x2B && emulator_2b_enabled()) send_emu_zone_write06_ack(0x2B, frame, reg, value);  // v97
+
+              continue;
+            }
+
+            if (func == 0x10 && len == 8) {
+              uint16_t start = ((uint16_t) frame[2] << 8) | frame[3];
+              uint16_t count = ((uint16_t) frame[4] << 8) | frame[5];
+              if (addr == 0x29) {
+                ESP_LOGI("dd_decode", "WRITE multi ACK addr=0x%02X start=%u / 0x%04X count=%u", addr, start, start, count);
+              }
+
+              continue;
+            }
+
+            if (func == 0x10 && len >= 11) {
+              uint16_t start = ((uint16_t) frame[2] << 8) | frame[3];
+              uint16_t count = ((uint16_t) frame[4] << 8) | frame[5];
+              uint8_t byte_count = frame[6];
+              int values = byte_count / 2;
+
+              if (addr == 0x29) {
+                ESP_LOGW("dd_decode", "WRITE multi addr=0x%02X start=%u / 0x%04X count=%u bytes=%u", addr, start, start, count, byte_count);
+              }
+
+              std::string values_json = "[";
+              for (int i = 0; i < values; i++) {
+                if (i > 0) values_json += ",";
+                uint16_t uvalue = ((uint16_t) frame[7 + i * 2] << 8) | frame[8 + i * 2];
+                int value = (int16_t) uvalue;
+                values_json += std::to_string(value);
+              }
+              values_json += "]";
+
+              for (int i = 0; i < values; i++) {
+                uint16_t reg = start + i;
+                uint16_t uvalue = ((uint16_t) frame[7 + i * 2] << 8) | frame[8 + i * 2];
+                int value = (int16_t) uvalue;
+
+                if (addr == 0x29) {
+                  ESP_LOGW("dd_decode", "  PDU=%u / 0x%04X value=%d / 0x%04X", reg, reg, value, uvalue);
+                }
+                handle_pdu(addr, func, reg, value, "WRITE10");
+              }
+
+              if (addr == 0x29 && emulator_29_enabled()) {
+                send_emu29_write10_ack(start, count);
+              }
+              if (addr == 0x2A && emulator_2a_enabled()) send_emu_zone_write10_ack(0x2A, start, count);  // v97
+              if (addr == 0x2B && emulator_2b_enabled()) send_emu_zone_write10_ack(0x2B, start, count);  // v97
+
+              if (addr == 0x33 && emulator_33_enabled()) {
+                bool dominus_presence_probe = (start == 2001 && count == 2 && values >= 2 &&
+                                               (((uint16_t) frame[7] << 8) | frame[8]) == 12 &&
+                                               (((uint16_t) frame[9] << 8) | frame[10]) == 0);
+                if (dominus_presence_probe) {
+                  id(dd_emu_33_last_ms) = millis();
+                  ESP_LOGW("dd_emu_33", "v52 Dominus probe RX 0x33/2001..2002=[12,0] - AUTO ACK wysłany (fast)");
+                } else {
+                  ESP_LOGW("dd_emu_33", "v52 0x33 WRITE10 start=%u count=%u - AUTO ACK fast-turnaround %s", start, count, emu33_write10_ack_pre_sent ? "OK" : "late");
+                  if (!emu33_write10_ack_pre_sent) send_emu33_write10_ack(start, count);
+                }
+              }
+
+              continue;
+            }
+          }
+  # v112: removed the dead "interval: 5ms" block (active anchor-write) - it was DISABLED since v57
+  # (return at the top). Slave model: the emulator does NOT write actively, the boiler reads settings from replies to
+  # READ. Also removed send_frame/send_frame_noack (used only in this block). ~365 lines of dead code.
