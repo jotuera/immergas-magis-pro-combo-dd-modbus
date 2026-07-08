@@ -6,8 +6,8 @@
 # setpoints, weekly schedules, operating mode and boiler faults. See README.md for wiring, the register
 # map and setup.
 #
-# Project : jotuera.immergas-magis-combo-dd-modbus  |  v1.0.0
-# Repo    : https://github.com/jotuera/immergas-magis-combo-dd-modbus
+# Project : jotuera.immergas-magis-pro-combo-dd-modbus  |  v1.0.0
+# Repo    : https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus
 # License : MIT (c) 2026 JoTu
 # Tested  : Magis Combo V2 (MPROCOMBOV2). Other Immergas engines use different register maps - untested.
 
@@ -46,7 +46,7 @@ substitutions:
 
   # v110: project metadata (author / GitHub repo). After publishing, set the correct repo URL.
   author: "JoTu"
-  github_url: "https://github.com/jotuera/immergas-magis-combo-dd-modbus"
+  github_url: "https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus"
   project_version: "1.0.0"
 
 esphome:
@@ -54,7 +54,7 @@ esphome:
   friendly_name: Immergas D+D- Atom
   comment: "Immergas Dominus/Panel (D+/D-) emulator | author: ${author} | ${github_url}"
   project:
-    name: "jotuera.immergas-magis-combo-dd-modbus"
+    name: "jotuera.immergas-magis-pro-combo-dd-modbus"
     version: "${project_version}"
   on_boot:
     priority: 800
@@ -2742,7 +2742,7 @@ text_sensor:
   # v73: Zone 1 operating phase (Comfort/Eco/Manual) from PDU 2010 LB. bit6=Comfort, bit7=Eco, bit2=Manual
   # (Dominus app logic: flag8 bits 2/6/7). Read-only - the boiler writes 2010 to us (captured in handle_pdu).
   - platform: template
-    name: "Immergas - Zone 1 phase (Comfort/Eco)"
+    name: "Immergas - Zone 1 phase (Comfort-Eco)"
     id: dd_zone1_phase_text
     icon: mdi:home-thermometer
     update_interval: 10s
@@ -2756,7 +2756,7 @@ text_sensor:
   # v96: Zone 2 operating phase (Comfort/Eco/Manual) from dd_zone2_status_raw. Placeholder - the boiler writes
   # zone 2 status only in a multi-zone setup (A13); with no data shows "—".
   - platform: template
-    name: "Immergas - Zone 2 phase (Comfort/Eco)"
+    name: "Immergas - Zone 2 phase (Comfort-Eco)"
     id: dd_zone2_phase_text
     icon: mdi:home-thermometer
     update_interval: 10s
@@ -2770,7 +2770,7 @@ text_sensor:
 
   # v96: Zone 3 operating phase (Comfort/Eco/Manual) from dd_zone3_status_raw. Placeholder like Zone 2.
   - platform: template
-    name: "Immergas - Zone 3 phase (Comfort/Eco)"
+    name: "Immergas - Zone 3 phase (Comfort-Eco)"
     id: dd_zone3_phase_text
     icon: mdi:home-thermometer
     update_interval: 10s
