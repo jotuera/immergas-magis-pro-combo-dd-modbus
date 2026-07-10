@@ -6,10 +6,17 @@
 # setpoints, weekly schedules, operating mode and boiler faults. See README.md for wiring, the register
 # map and setup.
 #
-# Project : jotuera.immergas-magis-pro-combo-dd-modbus  |  v1.0.0
+# Project : jotuera.immergas-magis-pro-combo-dd-modbus  |  v1.1.0
 # Repo    : https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus
 # License : MIT (c) 2026 JoTu
 # Tested  : Magis Combo V2 (MPROCOMBOV2). Other Immergas engines use different register maps - untested.
+#
+# Changelog:
+#   v1.1.0 - Fix setpoints (CH/DHW) bouncing/reverting (e.g. CH Setpoint Zone 2 25<->21). Last-writer-wins:
+#            the slider AND the climate now hold their value and adopt genuine boiler/Dominus changes.
+#            Root cause: the 1s loop forced setpoint = thermostat unconditionally, and make_call() only set
+#            target_temperature_low (a no-op on heat-only climates). Now: delta-sync loop + dual target setter.
+#   v1.0.0 - Initial public release.
 
 substitutions:
   # v64 HYBRID: 4 temp/humidity sources for the emulated panel 0x29 (Basement/Ground/Upper/House).
@@ -47,7 +54,7 @@ substitutions:
   # v110: project metadata (author / GitHub repo). After publishing, set the correct repo URL.
   author: "JoTu"
   github_url: "https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus"
-  project_version: "1.0.0"
+  project_version: "1.1.0"
 
 esphome:
   name: immergas-dd-atom
@@ -562,6 +569,74 @@ globals:
     restore_value: yes
     initial_value: '300'
 
+  # v117 last-writer-wins: last value seen on the bus. The capture adopts ONLY when value != last_bus
+  # (a genuine change from the Dominus); on the boiler re-writing the same value it does NOT revert the
+  # HA change -> the slider holds and the boiler reads/propagates it (like a real panel). -32768 sentinel.
+  - id: zone1_setpoint_last_bus
+    type: int
+    restore_value: no
+    initial_value: '-32768'
+  - id: zone1_offset_last_bus
+    type: int
+    restore_value: no
+    initial_value: '-32768'
+  - id: dominus_comfort_heat_last_bus
+    type: int
+    restore_value: no
+    initial_value: '-32768'
+  - id: dominus_eco_heat_last_bus
+    type: int
+    restore_value: no
+    initial_value: '-32768'
+  - id: dominus_comfort_cool_last_bus
+    type: int
+    restore_value: no
+    initial_value: '-32768'
+  - id: dominus_eco_cool_last_bus
+    type: int
+    restore_value: no
+    initial_value: '-32768'
+  - id: dominus_humidity_last_bus
+    type: int
+    restore_value: no
+    initial_value: '-32768'
+  - id: dominus_set_flow_last_bus
+    type: int
+    restore_value: no
+    initial_value: '-32768'
+  - id: cwu_setpoint_last_bus
+    type: int
+    restore_value: no
+    initial_value: '-32768'
+  - id: zone2_setpoint_last_bus
+    type: int
+    restore_value: no
+    initial_value: '-32768'
+  - id: zone3_setpoint_last_bus
+    type: int
+    restore_value: no
+    initial_value: '-32768'
+
+  # v118 last-writer-wins delta-sync: last thermostat target we reconciled with 'raw'. The 1s loop sets
+  # raw = thermostat ONLY when target != thermo_last (user REALLY moved the thermostat); otherwise raw
+  # (slider/bus) is kept and the thermostat is best-effort synced. Initialized in the first loop tick.
+  - id: zone1_thermo_last
+    type: int
+    restore_value: no
+    initial_value: '-32768'
+  - id: cwu_thermo_last
+    type: int
+    restore_value: no
+    initial_value: '-32768'
+  - id: zone2_thermo_last
+    type: int
+    restore_value: no
+    initial_value: '-32768'
+  - id: zone3_thermo_last
+    type: int
+    restore_value: no
+    initial_value: '-32768'
+
   # ------------------------------------------------------------
   # Dodatkowe 0x29 - diagnostyczne/kandydaci
   # ------------------------------------------------------------
@@ -850,7 +925,7 @@ number:
           id(cwu_setpoint_raw) = (int) round(x * 10.0f);
           ESP_LOGW("dd_control", "v57 STEROWANIE CWU: zadana %.1f stopni raw=%d. Emulator zwraca to na READ 2095.", x, id(cwu_setpoint_raw));
           id(cwu_setpoint_number).publish_state(x);  // v61: natychmiastowy update suwaka w HA
-          id(cwu_thermostat).make_call().set_target_temperature_low(x).perform();  // v65: sync termostat
+          id(cwu_thermostat).make_call().set_target_temperature_low(x).set_target_temperature(x).perform();  // v65: sync termostat
 
   # ------------------------------------------------------------
   # Zone 1 - active setpoint and U03/Offset
@@ -873,7 +948,7 @@ number:
           id(zone1_setpoint_raw) = raw;
           ESP_LOGW("dd_control", "v18 anchor-zone-write: zlecono zapis Strefy 1: zadana %.1f°C raw=%d. Czekam na naturalny ACK jako kotwicę.", x, raw);
           id(zone1_setpoint_number).publish_state(x);  // v61: natychmiastowy update suwaka w HA
-          id(co_thermostat).make_call().set_target_temperature_low(x).perform();  // v65: sync termostat
+          id(co_thermostat).make_call().set_target_temperature_low(x).set_target_temperature(x).perform();  // v65: sync termostat
 
   - platform: template
     name: "Immergas - U03 Heating offset (CH) zone 1"
@@ -914,7 +989,7 @@ number:
           id(zone2_setpoint_raw) = (int) round(x * 10.0f);
           ESP_LOGW("dd_control", "v96 Strefa 2 zadana %.1f°C raw=%d (placeholder - backend 0x2A do zrobienia)", x, id(zone2_setpoint_raw));
           id(zone2_setpoint_number).publish_state(x);
-          id(co_thermostat_2).make_call().set_target_temperature_low(x).perform();
+          id(co_thermostat_2).make_call().set_target_temperature_low(x).set_target_temperature(x).perform();
 
   - platform: template
     name: "Immergas - CH Setpoint Zone 3"
@@ -934,7 +1009,7 @@ number:
           id(zone3_setpoint_raw) = (int) round(x * 10.0f);
           ESP_LOGW("dd_control", "v96 Strefa 3 zadana %.1f°C raw=%d (placeholder - backend 0x2B do zrobienia)", x, id(zone3_setpoint_raw));
           id(zone3_setpoint_number).publish_state(x);
-          id(co_thermostat_3).make_call().set_target_temperature_low(x).perform();
+          id(co_thermostat_3).make_call().set_target_temperature_low(x).set_target_temperature(x).perform();
 
   - platform: template
     name: "Immergas - U04 Heating offset (CH) zone 2"
@@ -3083,24 +3158,66 @@ climate:
       - logger.log: "CO Strefa 3: zadana osiagnieta"
 
 interval:
-  # v65: sync thermostat <-> setpoint. First tick: set the thermostat target from the saved setpoint
-  # (so climate shows correctly and doesn't reset the setpoint). Then: the setpoint follows the target.
+  # v118 last-writer-wins delta-sync (replaces v65 unconditional raw=thermostat).
+  # First tick: init the thermostats from the saved setpoint + store thermo_last = raw.
+  # Next ticks, per setpoint:
+  #   1) target != thermo_last  -> user MOVED the thermostat -> raw = target (thermostat wins), publish slider.
+  #   2) else if raw != target  -> raw changed by slider/bus -> best-effort sync the thermostat
+  #      (make_call; retried each tick until target catches up). raw is NOT reverted.
+  # Key: the loop no longer forces raw=thermostat unconditionally -> a slider/Dominus change holds on the
+  # bus even if make_call does not visually update the thermostat.
   - interval: 1s
     then:
       - lambda: |-
           static bool first = true;
           if (first) {
             first = false;
-            id(co_thermostat).make_call().set_target_temperature_low(id(zone1_setpoint_raw) / 10.0f).perform();
-            id(cwu_thermostat).make_call().set_target_temperature_low(id(cwu_setpoint_raw) / 10.0f).perform();
-            id(co_thermostat_2).make_call().set_target_temperature_low(id(zone2_setpoint_raw) / 10.0f).perform();  // v96
-            id(co_thermostat_3).make_call().set_target_temperature_low(id(zone3_setpoint_raw) / 10.0f).perform();  // v96
+            id(co_thermostat).make_call().set_target_temperature_low(id(zone1_setpoint_raw) / 10.0f).set_target_temperature(id(zone1_setpoint_raw) / 10.0f).perform();
+            id(cwu_thermostat).make_call().set_target_temperature_low(id(cwu_setpoint_raw) / 10.0f).set_target_temperature(id(cwu_setpoint_raw) / 10.0f).perform();
+            id(co_thermostat_2).make_call().set_target_temperature_low(id(zone2_setpoint_raw) / 10.0f).set_target_temperature(id(zone2_setpoint_raw) / 10.0f).perform();  // v96
+            id(co_thermostat_3).make_call().set_target_temperature_low(id(zone3_setpoint_raw) / 10.0f).set_target_temperature(id(zone3_setpoint_raw) / 10.0f).perform();  // v96
+            id(zone1_thermo_last) = id(zone1_setpoint_raw);
+            id(cwu_thermo_last)   = id(cwu_setpoint_raw);
+            id(zone2_thermo_last) = id(zone2_setpoint_raw);
+            id(zone3_thermo_last) = id(zone3_setpoint_raw);
             return;
           }
-          id(zone1_setpoint_raw) = (int) roundf(id(co_thermostat).target_temperature_low * 10.0f);
-          id(cwu_setpoint_raw) = (int) roundf(id(cwu_thermostat).target_temperature_low * 10.0f);
-          id(zone2_setpoint_raw) = (int) roundf(id(co_thermostat_2).target_temperature_low * 10.0f);  // v96
-          id(zone3_setpoint_raw) = (int) roundf(id(co_thermostat_3).target_temperature_low * 10.0f);  // v96
+          // --- Zone 1 (CH) ---
+          {
+            int ti = (int) roundf(id(co_thermostat).target_temperature_low * 10.0f);
+            if (ti != id(zone1_thermo_last)) {
+              id(zone1_setpoint_raw) = ti; id(zone1_setpoint_number).publish_state(ti / 10.0f); id(zone1_thermo_last) = ti;
+            } else if (id(zone1_setpoint_raw) != ti) {
+              id(co_thermostat).make_call().set_target_temperature_low(id(zone1_setpoint_raw) / 10.0f).set_target_temperature(id(zone1_setpoint_raw) / 10.0f).perform();
+            }
+          }
+          // --- DHW ---
+          {
+            int ti = (int) roundf(id(cwu_thermostat).target_temperature_low * 10.0f);
+            if (ti != id(cwu_thermo_last)) {
+              id(cwu_setpoint_raw) = ti; id(cwu_setpoint_number).publish_state(ti / 10.0f); id(cwu_thermo_last) = ti;
+            } else if (id(cwu_setpoint_raw) != ti) {
+              id(cwu_thermostat).make_call().set_target_temperature_low(id(cwu_setpoint_raw) / 10.0f).set_target_temperature(id(cwu_setpoint_raw) / 10.0f).perform();
+            }
+          }
+          // --- Zone 2 (CH) ---
+          {
+            int ti = (int) roundf(id(co_thermostat_2).target_temperature_low * 10.0f);
+            if (ti != id(zone2_thermo_last)) {
+              id(zone2_setpoint_raw) = ti; id(zone2_setpoint_number).publish_state(ti / 10.0f); id(zone2_thermo_last) = ti;
+            } else if (id(zone2_setpoint_raw) != ti) {
+              id(co_thermostat_2).make_call().set_target_temperature_low(id(zone2_setpoint_raw) / 10.0f).set_target_temperature(id(zone2_setpoint_raw) / 10.0f).perform();
+            }
+          }
+          // --- Zone 3 (CH) ---
+          {
+            int ti = (int) roundf(id(co_thermostat_3).target_temperature_low * 10.0f);
+            if (ti != id(zone3_thermo_last)) {
+              id(zone3_setpoint_raw) = ti; id(zone3_setpoint_number).publish_state(ti / 10.0f); id(zone3_thermo_last) = ti;
+            } else if (id(zone3_setpoint_raw) != ti) {
+              id(co_thermostat_3).make_call().set_target_temperature_low(id(zone3_setpoint_raw) / 10.0f).set_target_temperature(id(zone3_setpoint_raw) / 10.0f).perform();
+            }
+          }
 
   - interval: 10ms
     then:
@@ -3975,9 +4092,9 @@ interval:
             // Active setpoint / U03
             // ------------------------------------------------------------
             if (reg == REG_ZONE1_SETPOINT) {
-              if (addr == 0x2A) { id(zone2_setpoint_raw) = value; id(zone2_setpoint_number).publish_state(value / 10.0f); }
-              else if (addr == 0x2B) { id(zone3_setpoint_raw) = value; id(zone3_setpoint_number).publish_state(value / 10.0f); }
-              else { id(zone1_setpoint_raw) = value; id(zone1_setpoint_number).publish_state(value / 10.0f); }
+              if (addr == 0x2A) { if (value != id(zone2_setpoint_last_bus)) { id(zone2_setpoint_raw) = value; id(zone2_setpoint_number).publish_state(value / 10.0f); } id(zone2_setpoint_last_bus) = value; }  // v118 last-writer-wins
+              else if (addr == 0x2B) { if (value != id(zone3_setpoint_last_bus)) { id(zone3_setpoint_raw) = value; id(zone3_setpoint_number).publish_state(value / 10.0f); } id(zone3_setpoint_last_bus) = value; }  // v118 last-writer-wins
+              else { if (value != id(zone1_setpoint_last_bus)) { id(zone1_setpoint_raw) = value; id(zone1_setpoint_number).publish_state(value / 10.0f); id(co_thermostat).make_call().set_target_temperature_low(value / 10.0f).set_target_temperature(value / 10.0f).perform(); } id(zone1_setpoint_last_bus) = value; }  // v117 last-writer-wins
               ESP_LOGI("dd_value", "%s addr=0x%02X setpoint PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -3985,7 +4102,7 @@ interval:
             if (reg == REG_ZONE1_OFFSET || reg == REG_ZONE1_OFFSET_COPY) {
               if (addr == 0x2A) { id(zone2_offset_raw) = value; id(zone2_offset_number).publish_state(value / 10.0f); }
               else if (addr == 0x2B) { id(zone3_offset_raw) = value; id(zone3_offset_number).publish_state(value / 10.0f); }
-              else { id(zone1_offset_raw) = value; id(zone1_offset_number).publish_state(value / 10.0f); }
+              else { if (value != id(zone1_offset_last_bus)) { id(zone1_offset_raw) = value; id(zone1_offset_number).publish_state(value / 10.0f); } id(zone1_offset_last_bus) = value; }  // v117 last-writer-wins
               ESP_LOGI("dd_value", "%s addr=0x%02X offset PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -3994,8 +4111,12 @@ interval:
             // DHW / external
             // ------------------------------------------------------------
             if (reg == REG_DHW_SETPOINT || reg == REG_DHW_SETPOINT_COPY_1 || reg == REG_DHW_SETPOINT_COPY_2 || reg == REG_DHW_SETPOINT_COPY_3) {
-              id(cwu_setpoint_raw) = value;
-              id(cwu_setpoint_number).publish_state(value / 10.0f);
+              if (value != id(cwu_setpoint_last_bus)) {  // v117 last-writer-wins
+                id(cwu_setpoint_raw) = value;
+                id(cwu_setpoint_number).publish_state(value / 10.0f);
+                id(cwu_thermostat).make_call().set_target_temperature_low(value / 10.0f).set_target_temperature(value / 10.0f).perform();
+              }
+              id(cwu_setpoint_last_bus) = value;
               ESP_LOGI("dd_value", "%s CWU setpoint/copy PDU %u = %d / %.1f°C", source, reg, value, value / 10.0f);
               return;
             }
@@ -4020,7 +4141,7 @@ interval:
             if (reg == REG_COMFORT_HEAT) {
               if (addr == 0x2A) { id(dominus_comfort_heat_z2_raw) = value; id(number_dominus_comfort_heat_z2).publish_state(value / 10.0f); }
               else if (addr == 0x2B) { id(dominus_comfort_heat_z3_raw) = value; id(number_dominus_comfort_heat_z3).publish_state(value / 10.0f); }
-              else { id(dominus_comfort_heat_raw) = value; id(number_dominus_comfort_heat).publish_state(value / 10.0f); }
+              else { if (value != id(dominus_comfort_heat_last_bus)) { id(dominus_comfort_heat_raw) = value; id(number_dominus_comfort_heat).publish_state(value / 10.0f); } id(dominus_comfort_heat_last_bus) = value; }  // v117 last-writer-wins
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Comfort Heat PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -4028,7 +4149,7 @@ interval:
             if (reg == REG_ECO_HEAT) {
               if (addr == 0x2A) { id(dominus_eco_heat_z2_raw) = value; id(number_dominus_eco_heat_z2).publish_state(value / 10.0f); }
               else if (addr == 0x2B) { id(dominus_eco_heat_z3_raw) = value; id(number_dominus_eco_heat_z3).publish_state(value / 10.0f); }
-              else { id(dominus_eco_heat_raw) = value; id(number_dominus_eco_heat).publish_state(value / 10.0f); }
+              else { if (value != id(dominus_eco_heat_last_bus)) { id(dominus_eco_heat_raw) = value; id(number_dominus_eco_heat).publish_state(value / 10.0f); } id(dominus_eco_heat_last_bus) = value; }  // v117 last-writer-wins
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Eco Heat PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -4036,7 +4157,7 @@ interval:
             if (reg == REG_COMFORT_COOL) {
               if (addr == 0x2A) { id(dominus_comfort_cool_z2_raw) = value; id(number_dominus_comfort_cool_z2).publish_state(value / 10.0f); }
               else if (addr == 0x2B) { id(dominus_comfort_cool_z3_raw) = value; id(number_dominus_comfort_cool_z3).publish_state(value / 10.0f); }
-              else { id(dominus_comfort_cool_raw) = value; id(number_dominus_comfort_cool).publish_state(value / 10.0f); }
+              else { if (value != id(dominus_comfort_cool_last_bus)) { id(dominus_comfort_cool_raw) = value; id(number_dominus_comfort_cool).publish_state(value / 10.0f); } id(dominus_comfort_cool_last_bus) = value; }  // v117 last-writer-wins
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Comfort Cool PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -4044,7 +4165,7 @@ interval:
             if (reg == REG_ECO_COOL_COPY || reg == REG_ECO_COOL) {
               if (addr == 0x2A) { id(dominus_eco_cool_z2_raw) = value; id(number_dominus_eco_cool_z2).publish_state(value / 10.0f); }
               else if (addr == 0x2B) { id(dominus_eco_cool_z3_raw) = value; id(number_dominus_eco_cool_z3).publish_state(value / 10.0f); }
-              else { id(dominus_eco_cool_raw) = value; id(number_dominus_eco_cool).publish_state(value / 10.0f); }
+              else { if (value != id(dominus_eco_cool_last_bus)) { id(dominus_eco_cool_raw) = value; id(number_dominus_eco_cool).publish_state(value / 10.0f); } id(dominus_eco_cool_last_bus) = value; }  // v117 last-writer-wins
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Eco Cool PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -4052,7 +4173,7 @@ interval:
             if (reg == REG_HUMIDITY) {
               if (addr == 0x2A) { id(dominus_humidity_z2_raw) = value; id(number_dominus_humidity_z2).publish_state(value); }
               else if (addr == 0x2B) { id(dominus_humidity_z3_raw) = value; id(number_dominus_humidity_z3).publish_state(value); }
-              else { id(dominus_humidity_raw) = value; id(number_dominus_humidity).publish_state(value); }
+              else { if (value != id(dominus_humidity_last_bus)) { id(dominus_humidity_raw) = value; id(number_dominus_humidity).publish_state(value); } id(dominus_humidity_last_bus) = value; }  // v117 last-writer-wins
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Umidity PDU %u = %d%%", source, addr, reg, value);
               return;
             }
@@ -4060,7 +4181,7 @@ interval:
             if (reg == REG_SET_FLOW) {
               if (addr == 0x2A) { id(dominus_set_flow_z2_raw) = value; id(number_dominus_set_flow_z2).publish_state(value / 10.0f); }
               else if (addr == 0x2B) { id(dominus_set_flow_z3_raw) = value; id(number_dominus_set_flow_z3).publish_state(value / 10.0f); }
-              else { id(dominus_set_flow_raw) = value; id(number_dominus_set_flow).publish_state(value / 10.0f); }
+              else { if (value != id(dominus_set_flow_last_bus)) { id(dominus_set_flow_raw) = value; id(number_dominus_set_flow).publish_state(value / 10.0f); } id(dominus_set_flow_last_bus) = value; }  // v117 last-writer-wins
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Flow PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
