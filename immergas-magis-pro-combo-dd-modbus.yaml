@@ -6,12 +6,22 @@
 # setpoints, weekly schedules, operating mode and boiler faults. See README.md for wiring, the register
 # map and setup.
 #
-# Project : jotuera.immergas-magis-pro-combo-dd-modbus  |  v1.1.0
+# Project : jotuera.immergas-magis-pro-combo-dd-modbus  |  v1.2.0
 # Repo    : https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus
 # License : MIT (c) 2026 JoTu
 # Tested  : Magis Combo V2 (MPROCOMBOV2). Other Immergas engines use different register maps - untested.
 #
 # Changelog:
+#   v1.2.0 - FIX: DHW setpoint stuck at 60 C after the weekly anti-legionella cycle (boiler P15). The emulator
+#            adopted the boiler's ACTIVE DHW setpoint (3015, written to the panel) as a user change and, acting as
+#            the panel, fed it back -> the boiler "restored" 60 C forever. Now only device replies (Dominus 0x33 /
+#            physical panel) change the DHW setpoint; 3015 is display-only ("D05 Active DHW setpoint (boiler)").
+#            NEW: heat-pump data from the outdoor-unit interface board (0x1E, Samsung MIM): compressor Hz,
+#            discharge / evaporator / compressor-shell temps, current, fan target, EEV, water target, run flags,
+#            operating stage, firmware versions; boiler clock (2300); main/secondary generator flow/return
+#            (3011-3014); calculated flow setpoint D04 (3003); number of zones A13 (4199). Entity names carry the
+#            Immergas manual codes (D71, D73, ...). Optional bus sniffer (diagnostic, OFF by default) logging every
+#            register change (tag "sniff"). Register map: REGISTER_MAP.md.
 #   v1.1.0 - Fix setpoints (CH/DHW) bouncing/reverting (e.g. CH Setpoint Zone 2 25<->21). Last-writer-wins:
 #            the slider AND the climate now hold their value and adopt genuine boiler/Dominus changes.
 #            Root cause: the 1s loop forced setpoint = thermostat unconditionally, and make_call() only set
@@ -54,7 +64,7 @@ substitutions:
   # v110: project metadata (author / GitHub repo). After publishing, set the correct repo URL.
   author: "JoTu"
   github_url: "https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus"
-  project_version: "1.1.0"
+  project_version: "1.2.0"
 
 esphome:
   name: immergas-dd-atom
@@ -123,6 +133,24 @@ uart:
   rx_buffer_size: 1024
 
 globals:
+  # v1.2.0 bus sniffer (diagnostic, OFF by default)
+  - id: dd_sniff_enabled
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: dd_sniff_reset_req
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: dd_sniff_regs
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: dd_sniff_changes
+    type: int
+    restore_value: no
+    initial_value: '0'
+
   # ------------------------------------------------------------
   # v62: room temperature/humidity from HA (for the emulated panel 0x29).
   # int: temp x10 (215 = 21.5C), humidity in % (50). Unavailable -> last known value.
@@ -753,6 +781,22 @@ globals:
     initial_value: '0'
 
 switch:
+  # v1.2.0: bus sniffer - logs (tag "sniff") every NEW/CHANGED register value on D+/D-. Diagnostic, OFF by default.
+  - platform: template
+    name: "Immergas - Bus sniffer"
+    id: sniff_switch
+    icon: mdi:radar
+    entity_category: diagnostic
+    restore_mode: RESTORE_DEFAULT_OFF
+    lambda: |-
+      return id(dd_sniff_enabled);
+    turn_on_action:
+      - lambda: |-
+          id(dd_sniff_enabled) = true;
+    turn_off_action:
+      - lambda: |-
+          id(dd_sniff_enabled) = false;
+
   # v100: removed the 4 "Chrono: profile Cal 1..4" switches - misleading "activation" (in the app none of the 4
   # calendar is the main one; just assign a profile to each day with the CO selects below +
   # shortcut "all days -> profile"). Profile editors (datetime cal1-4) and day selects stay.
@@ -2377,7 +2421,233 @@ select:
 
           ESP_LOGW("dd_control", "v59 STEROWANIE TRYBEM: zadany %s -> %d. Emulator zwraca to na READ 2000, piec zastosuje (~1.85s).", x.c_str(), mode);
 
+# v1.2.0: reset the sniffer map = new baseline (e.g. before clicking through panel options).
+button:
+  - platform: template
+    name: "Immergas - Bus sniffer reset"
+    id: sniff_reset_button
+    icon: mdi:restart
+    entity_category: diagnostic
+    on_press:
+      - lambda: |-
+          id(dd_sniff_reset_req) = true;
+
 sensor:
+
+  # v1.2.0 bus sniffer counters
+  - platform: template
+    name: "Immergas - Bus sniffer registers"
+    id: sniff_regs_sensor
+    icon: mdi:counter
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(dd_sniff_regs);
+  - platform: template
+    name: "Immergas - Bus sniffer changes"
+    id: sniff_changes_sensor
+    icon: mdi:counter
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(dd_sniff_changes);
+
+  # v1.2.0 boiler -> panel block (0x29) = zone-panel "Information" menu 1:1 (all x0.1 C, published from handle_pdu)
+  # 3003 = heating-curve flow setpoint (0 without demand)
+  - platform: template
+    name: "Immergas - D04 Calculated flow setpoint"
+    id: sniff_29_w_3003
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 3011 = main generator (heat pump) flow
+  - platform: template
+    name: "Immergas - D20 Main generator flow temperature"
+    id: sniff_29_w_3011
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 3012 = main generator (heat pump) return
+  - platform: template
+    name: "Immergas - D08 Main generator return temperature"
+    id: sniff_29_w_3012
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 3013 = secondary generator (gas boiler) flow ("Flow temp. 2")
+  - platform: template
+    name: "Immergas - D01 Secondary generator flow temperature"
+    id: sniff_29_w_3013
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 3014 = secondary generator return ("Return temp. 2")
+  - platform: template
+    name: "Immergas - Secondary generator return temperature"
+    id: sniff_29_w_3014
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 3015 = DHW setpoint the boiler is actually using (e.g. 60 during anti-legionella)
+  - platform: template
+    name: "Immergas - D05 Active DHW setpoint (boiler)"
+    id: sniff_29_w_3015
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  - platform: template
+    name: "Immergas - A13 Number of zones"
+    id: sniff_33_w_4199
+    icon: mdi:numeric
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: never
+
+  # v1.2.0 heat pump via the outdoor-unit interface board (0x1E, Samsung MIM). Verified on 3 buses (D+/D-, T-/T+, NASA F1/F2).
+  # 0x1E I3
+  - platform: template
+    name: "Immergas - HP D73 Compressor discharge temperature"
+    id: sniff_1e_i_3
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 0x1E I4
+  - platform: template
+    name: "Immergas - HP D74 Evaporator temperature (outdoor coil)"
+    id: sniff_1e_i_4
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 0x1E I5 (the boiler forwards it as 3002)
+  - platform: template
+    name: "Immergas - HP D79 Outdoor unit probe temperature"
+    id: sniff_1e_i_5
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 0x1E I6
+  - platform: template
+    name: "Immergas - HP D72 Compressor temperature (shell)"
+    id: sniff_1e_i_6
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 0x1E I17
+  - platform: template
+    name: "Immergas - HP Target discharge temperature"
+    id: sniff_1e_i_17
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 0x1E I10 = water target sent to the HP (= D04 on demand, 5.0 idle)
+  - platform: template
+    name: "Immergas - HP Water target temperature"
+    id: sniff_1e_i_10
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 0x1E W20 = boiler -> HP (the outdoor unit has no water probes)
+  - platform: template
+    name: "Immergas - HP D08 Water return temperature (TW1)"
+    id: sniff_1e_w_20
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 0x1E W21
+  - platform: template
+    name: "Immergas - HP D20 Water flow temperature (TW2)"
+    id: sniff_1e_w_21
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 0x1E W22
+  - platform: template
+    name: "Immergas - HP D24 Refrigerant liquid temperature"
+    id: sniff_1e_w_22
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  - platform: template
+    name: "Immergas - HP D71 Compressor frequency"
+    id: sniff_1e_i_11
+    icon: mdi:sine-wave
+    device_class: frequency
+    state_class: measurement
+    unit_of_measurement: "Hz"
+    accuracy_decimals: 0
+    update_interval: never
+  - platform: template
+    name: "Immergas - HP D75 Compressor current"
+    id: sniff_1e_i_13
+    icon: mdi:current-ac
+    device_class: current
+    state_class: measurement
+    unit_of_measurement: "A"
+    accuracy_decimals: 1
+    update_interval: never
+  - platform: template
+    name: "Immergas - HP D76 Fan target speed"
+    id: sniff_1e_i_14
+    icon: mdi:fan
+    state_class: measurement
+    unit_of_measurement: "rpm"
+    accuracy_decimals: 0
+    update_interval: never
+  - platform: template
+    name: "Immergas - HP D77 EEV position"
+    id: sniff_1e_i_16
+    icon: mdi:valve
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: never
+
 
   # ------------------------------------------------------------
   # v62: inputs from HA - Zone 1 room temp and humidity (for the emulated panel 0x29).
@@ -2774,6 +3044,49 @@ sensor:
 
 text_sensor:
 
+  # v1.2.0
+  - platform: template
+    name: "Immergas - Bus sniffer last change"
+    id: sniff_last_change
+    icon: mdi:radar
+    entity_category: diagnostic
+    update_interval: never
+  - platform: template
+    name: "Immergas - D140-D142 Boiler clock"
+    id: sniff_clock_2300
+    icon: mdi:clock-outline
+    update_interval: never
+  - platform: template
+    name: "Immergas - HP Operating stage"
+    id: pc_etap_pracy
+    icon: mdi:progress-clock
+    update_interval: never
+  - platform: template
+    name: "Immergas - HP D120-D123 Outdoor main board firmware"
+    id: pc_fw_odu_main
+    icon: mdi:chip
+    entity_category: diagnostic
+    update_interval: never
+  - platform: template
+    name: "Immergas - HP D124-D127 Interface board (MIM) firmware"
+    id: pc_fw_interface
+    icon: mdi:chip
+    entity_category: diagnostic
+    update_interval: never
+  - platform: template
+    name: "Immergas - HP D128-D131 Inverter memory version"
+    id: pc_fw_inv_mem
+    icon: mdi:chip
+    entity_category: diagnostic
+    update_interval: never
+  - platform: template
+    name: "Immergas - HP D132-D135 Inverter firmware"
+    id: pc_fw_inv_fw
+    icon: mdi:chip
+    entity_category: diagnostic
+    update_interval: never
+
+
   # v110: metadane projektu (autor + repozytorium GitHub) - widoczne jako encje diagnostyczne urzadzenia.
   - platform: template
     name: "Immergas - Author"
@@ -3016,6 +3329,26 @@ text_sensor:
 # v66: online/offline status of emulated devices. "Online" = the boiler READS that address (03/04)
 # within the last 30 s = it accepted us. When it stops reading (or emulation is off) -> offline.
 binary_sensor:
+  # v1.2.0 heat-pump run flags (0x1E, published from handle_pdu)
+  - platform: template
+    name: "Immergas - HP Run request (boiler)"
+    id: pc_zlecenie_pracy
+    icon: mdi:power
+  - platform: template
+    name: "Immergas - HP Request accepted"
+    id: pc_zlecenie_przyjete
+    icon: mdi:check-circle-outline
+  - platform: template
+    name: "Immergas - HP Compressor running"
+    id: pc_sprezarka_pracuje
+    icon: mdi:heat-pump
+    device_class: running
+  - platform: template
+    name: "Immergas - HP Fan running"
+    id: pc_wentylator_pracuje
+    icon: mdi:fan
+    device_class: running
+
 
   # v71: boiler fault flag = PDU 2100 != 0; reset available = PDU 2101 LB bit1 (per Dominus config).
   - platform: template
@@ -3223,6 +3556,20 @@ interval:
     then:
       - lambda: |-
           static std::vector<uint8_t> rx;
+
+          // v1.2.0 SNIFFER: hash table of last values (key addr<<24 | kind<<16 | reg), 512 slots, max 400 registers.
+          struct SniffEnt { uint32_t k; int16_t v; uint16_t n; bool used; };
+          static SniffEnt sniff_tab[512];
+          static int sniff_used = 0;
+          if (id(dd_sniff_reset_req)) {
+            for (auto &e : sniff_tab) e.used = false;
+            sniff_used = 0;
+            id(dd_sniff_reset_req) = false;
+            id(dd_sniff_regs) = 0;
+            id(dd_sniff_changes) = 0;
+            id(sniff_last_change).publish_state("reset - new baseline");
+            ESP_LOGI("sniff", "RESET sniffer map");
+          }
 
           // v95: "Modbus connection" (dd_enable_replies) = master RX+TX. OFF -> the emulator does NOT
           // process the bus: we drain the UART (to avoid overflow), clear rx, don't decode,
@@ -3999,6 +4346,123 @@ interval:
           };
 
           auto handle_pdu = [&](uint8_t addr, uint8_t func, uint16_t reg, int value, const char *source) {
+            // v1.2.0 - decoded registers + optional bus sniffer (before everything else, also before the 0x1E "return").
+            {
+              char kind = (source[0] == 'W') ? 'W' : (func == 0x04 ? 'I' : 'R');  // R = func03 reply, I = func04 reply, W = boiler write
+              struct SniffSens { uint8_t addr; char kind; uint16_t reg; sensor::Sensor *s; float scale; int last; bool seen; };
+              static SniffSens tbl[] = {
+                {0x29, 'W', 3003, id(sniff_29_w_3003), 0.1f, 0, false},
+                {0x29, 'W', 3011, id(sniff_29_w_3011), 0.1f, 0, false},
+                {0x29, 'W', 3012, id(sniff_29_w_3012), 0.1f, 0, false},
+                {0x29, 'W', 3013, id(sniff_29_w_3013), 0.1f, 0, false},
+                {0x29, 'W', 3014, id(sniff_29_w_3014), 0.1f, 0, false},
+                {0x29, 'W', 3015, id(sniff_29_w_3015), 0.1f, 0, false},
+                {0x33, 'W', 4199, id(sniff_33_w_4199), 1.0f, 0, false},
+                {0x1E, 'I', 3, id(sniff_1e_i_3), 0.1f, 0, false},
+                {0x1E, 'I', 4, id(sniff_1e_i_4), 0.1f, 0, false},
+                {0x1E, 'I', 5, id(sniff_1e_i_5), 0.1f, 0, false},
+                {0x1E, 'I', 6, id(sniff_1e_i_6), 0.1f, 0, false},
+                {0x1E, 'I', 10, id(sniff_1e_i_10), 0.1f, 0, false},
+                {0x1E, 'I', 11, id(sniff_1e_i_11), 1.0f, 0, false},
+                {0x1E, 'I', 13, id(sniff_1e_i_13), 0.1f, 0, false},
+                {0x1E, 'I', 14, id(sniff_1e_i_14), 1.0f, 0, false},
+                {0x1E, 'I', 16, id(sniff_1e_i_16), 1.0f, 0, false},
+                {0x1E, 'I', 17, id(sniff_1e_i_17), 0.1f, 0, false},
+                {0x1E, 'W', 20, id(sniff_1e_w_20), 0.1f, 0, false},
+                {0x1E, 'W', 21, id(sniff_1e_w_21), 0.1f, 0, false},
+                {0x1E, 'W', 22, id(sniff_1e_w_22), 0.1f, 0, false}
+              };
+              for (auto &e : tbl) {
+                if (e.addr == addr && e.kind == kind && e.reg == reg) {
+                  if (!e.seen || e.last != value) { e.last = value; e.seen = true; e.s->publish_state(value * e.scale); }
+                  break;
+                }
+              }
+              // 0x1E heat-pump flags (W0 run request, I36 compressor, I38 fan, I40 request accepted), stage, firmware
+              if (addr == 0x1E) {
+                struct SniffBin { char kind; uint16_t reg; binary_sensor::BinarySensor *b; int last; bool seen; };
+                static SniffBin btbl[] = {
+                  {'W', 0, id(pc_zlecenie_pracy), 0, false},
+                  {'I', 36, id(pc_sprezarka_pracuje), 0, false},
+                  {'I', 38, id(pc_wentylator_pracuje), 0, false},
+                  {'I', 40, id(pc_zlecenie_przyjete), 0, false},
+                };
+                for (auto &b : btbl) {
+                  if (b.kind == kind && b.reg == reg) {
+                    if (!b.seen || b.last != value) { b.last = value; b.seen = true; b.b->publish_state(value != 0); }
+                    break;
+                  }
+                }
+                if (kind == 'I' && reg == 19) {  // operating stage: 1 standby, 2 starting, 3 running
+                  static int last19 = -99999;
+                  if (value != last19) {
+                    last19 = value;
+                    const char *st = (value == 1) ? "Standby" : (value == 2) ? "Starting" : (value == 3) ? "Running" : nullptr;
+                    char sb[24];
+                    if (st == nullptr) { snprintf(sb, sizeof(sb), "Code %d", value); st = sb; }
+                    id(pc_etap_pracy).publish_state(st);
+                  }
+                }
+                // I22-I29 firmware: 2 parts per register (decimal pairs). I22/23 outdoor main board, I24/25 inverter,
+                // I26/27 inverter memory, I28/29 interface board MIM (register order != manual D-code order).
+                if (kind == 'I' && reg >= 22 && reg <= 29) {
+                  static int fw[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+                  int i = reg - 22;
+                  if (fw[i] != value) {
+                    fw[i] = value;
+                    int m = i / 2;
+                    if (fw[m * 2] >= 0 && fw[m * 2 + 1] >= 0) {
+                      char vb[20];
+                      snprintf(vb, sizeof(vb), "%02d.%02d.%02d.%02d", fw[m * 2] / 100, fw[m * 2] % 100, fw[m * 2 + 1] / 100, fw[m * 2 + 1] % 100);
+                      text_sensor::TextSensor *ts[4] = {id(pc_fw_odu_main), id(pc_fw_inv_fw), id(pc_fw_inv_mem), id(pc_fw_interface)};
+                      ts[m]->publish_state(vb);
+                    }
+                  }
+                }
+              }
+              // 2300 (boiler -> panel) = boiler clock [day of week 3b][hour 5b][minute 8b], 1 = Mon .. 7 = Sun (CET, no DST)
+              if (addr == 0x29 && kind == 'W' && reg == 2300) {
+                static int last2300 = -99999;
+                if (value != last2300) {
+                  last2300 = value;
+                  uint16_t u = (uint16_t) value;
+                  static const char *DN[8] = {"?", "Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"};
+                  char cbuf[24];
+                  snprintf(cbuf, sizeof(cbuf), "%s %02u:%02u", DN[(u >> 13) & 7], (unsigned) ((u >> 8) & 0x1F), (unsigned) (u & 0xFF));
+                  id(sniff_clock_2300).publish_state(cbuf);
+                }
+              }
+              if (id(dd_sniff_enabled)) {
+                uint32_t key = ((uint32_t) addr << 24) | ((uint32_t) (uint8_t) kind << 16) | reg;
+                uint32_t h = (key * 2654435761u) >> 23;  // 9 bits -> 0..511
+                SniffEnt *slot = nullptr;
+                bool found = false;
+                for (int p = 0; p < 512; p++) {
+                  SniffEnt &e = sniff_tab[(h + p) & 511];
+                  if (!e.used) { slot = &e; break; }
+                  if (e.k == key) { slot = &e; found = true; break; }
+                }
+                if (slot != nullptr && !found) {
+                  if (sniff_used < 400) {
+                    slot->used = true; slot->k = key; slot->v = (int16_t) value; slot->n = 0;
+                    sniff_used++;
+                    id(dd_sniff_regs) = sniff_used;
+                    ESP_LOGI("sniff", "NEW %02X %c %u = %d", (unsigned) addr, kind, (unsigned) reg, value);
+                  }
+                } else if (found && slot->v != (int16_t) value) {
+                  int old = slot->v;
+                  slot->v = (int16_t) value;
+                  if (slot->n < 65535) slot->n++;
+                  id(dd_sniff_changes)++;
+                  ESP_LOGI("sniff", "CHG %02X %c %u %d -> %d n=%u", (unsigned) addr, kind, (unsigned) reg, old, value, (unsigned) slot->n);
+                  if (slot->n <= 20) {
+                    char buf[72];
+                    snprintf(buf, sizeof(buf), "0x%02X %c %u: %d -> %d (chg %u)", (unsigned) addr, kind, (unsigned) reg, old, value, (unsigned) slot->n);
+                    id(sniff_last_change).publish_state(buf);
+                  }
+                }
+              }
+            }
             // v71: boiler fault monitoring. The boiler broadcasts the fault code in 2100 (0=none) and
             // 2101 (reset/flags) to 0x33 and 0x29 (confirmed by capture). We capture regardless
             // of emulation mode - works in pure sniffing too. Descriptions: anomalies[] (LBL).
@@ -4111,12 +4575,16 @@ interval:
             // DHW / external
             // ------------------------------------------------------------
             if (reg == REG_DHW_SETPOINT || reg == REG_DHW_SETPOINT_COPY_1 || reg == REG_DHW_SETPOINT_COPY_2 || reg == REG_DHW_SETPOINT_COPY_3) {
-              if (value != id(cwu_setpoint_last_bus)) {  // v117 last-writer-wins
+              // v1.2.0 ANTI-LEGIONELLA FIX: adopt ONLY device replies (READ: Dominus 0x33 / physical panel 0x29).
+              // A boiler WRITE (e.g. 3015 "DHW setpoint" to the panel) is the boiler's ACTIVE setpoint - 60 C during the
+              // anti-legionella cycle. Adopting it made the emulator (as the panel) feed 60 C back -> setpoint stuck at 60.
+              bool cwu_from_device = (source[0] == 'R');
+              if (cwu_from_device && value != id(cwu_setpoint_last_bus)) {  // v117 last-writer-wins
                 id(cwu_setpoint_raw) = value;
                 id(cwu_setpoint_number).publish_state(value / 10.0f);
                 id(cwu_thermostat).make_call().set_target_temperature_low(value / 10.0f).set_target_temperature(value / 10.0f).perform();
               }
-              id(cwu_setpoint_last_bus) = value;
+              if (cwu_from_device) id(cwu_setpoint_last_bus) = value;
               ESP_LOGI("dd_value", "%s CWU setpoint/copy PDU %u = %d / %.1f°C", source, reg, value, value / 10.0f);
               return;
             }
