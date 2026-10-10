@@ -6,6 +6,25 @@ The boiler is the Modbus **master**; this device is a **slave** that answers as 
 
 > ⚠️ **Tested only on the Magis Combo V2 (`MPROCOMBOV2`).** The Dominus app supports many Immergas engines (Zeus, Star, VictrixMaior, …) with different register maps — this project targets **Magis Combo only**. Other models may partially work but are untested. Contributions welcome.
 
+## What's new in v1.3.0
+
+Zone-panel settings decoded by clicking through every menu of a physical zone panel while sniffing the bus. The boiler **reads** these from panel `0x29`, so an emulated panel can now set them from Home Assistant (until now they were hard-coded):
+
+| Register | Entity | Values | Default |
+|---|---|---|---|
+| `2294` | **Time programs Zone 1** (select) | Manual / Auto | Manual |
+| `6105` | **Room probe modulation** (select) | NO / YES | NO |
+| `6107` | **Dew point correction** (switch) | on / off | on |
+
+- Defaults equal the previous hard-coded values, so **nothing changes after the upgrade** until you touch them.
+- **Auto** makes the boiler follow the CH weekly schedule (comfort / economy). With *Manual* — the previous behaviour — the schedule was ignored while emulating the zone panel. Check your economy setpoint before switching to Auto.
+- With a physical panel connected the controls mirror the panel's own replies (the panel is then the source of truth).
+- New read-only entities: **A31 Zone 1 room thermostat** (`6102`, RPT / RT / RP), **Time program state (boiler)** (`2090`: Manual / Auto (comfort) / Auto (economy)), **D09 DHW request pending** and **Boiler fault active (2001)**.
+- **A31 cannot be set over the bus**: it is a boiler parameter that the boiler writes to the panel but never reads back. Change it in the boiler menu.
+- Not transmitted at all (panel-local or unsupported by the boiler): frost-protection temperature, panel anti-bacterial cycle, dehumidification disable, minimum cooling setpoint, holiday program.
+
+See [REGISTER_MAP.md](REGISTER_MAP.md) for the full list of registers the boiler reads from the panel.
+
 ## What's new in v1.2.0
 
 > ⚠️ **Upgrade recommended for all v1.0/v1.1 users who emulate a zone panel.** If the boiler's **anti-legionella** function is enabled (parameter **P15**, by default every Monday at night), older versions get the **DHW setpoint stuck at 60 °C** after the disinfection cycle — visible everywhere (HA, Dominus, boiler) until changed by hand. Cause: the emulator adopted the boiler's *active* DHW setpoint (`3015`, written to the panel) as a user change and, acting as the panel, fed 60 °C back to the boiler. Fixed: only device replies (Dominus / physical panel) change the DHW setpoint; the boiler's active setpoint is shown read-only as **`D05 Active DHW setpoint (boiler)`**.
@@ -25,6 +44,7 @@ The boiler is the Modbus **master**; this device is a **slave** that answers as 
 - **Controls**: operating mode, zone CH setpoint, heating offset (U03/U04/U16), Comfort/Eco heat & cool setpoints, set-flow, humidity setting (U07/U08/U18), DHW setpoint.
 - **Weekly schedules (chrono)**: 4 shared time-profile calendars (`Calendar 1–4`) + independent day→calendar assignment per zone and for DHW.
 - **Monitors**: boiler fault code + **114 fault descriptions in official Immergas English** (extracted from the Dominus app labels), per-zone phase (Comfort/Eco), connection status of each device, firmware versions.
+- **Zone-panel settings** (v1.3.0): time programs Manual/Auto, room-probe modulation, dew-point correction (controllable); A31 room thermostat, time-program state, DHW-request-pending and fault flags (read-only).
 - **Heat pump & generators** (v1.2.0): compressor Hz / current / temperatures, fan, EEV, run flags and stage from the outdoor-unit interface board; heat-pump and gas-boiler flow/return temperatures; calculated flow setpoint (D04); active DHW setpoint; boiler clock.
 - **Local web UI** (ESPHome web server, password-protected) as a fallback independent of Home Assistant.
 
