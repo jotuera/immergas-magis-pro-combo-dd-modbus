@@ -27,7 +27,7 @@ Verified on **three buses** (D+/D-, T-/T+, NASA) at standby and during a forced 
 | 15–18 | R | constant 5 / 30 / 10 / 30 | T21–T24 (screed drying)? | — | — | CAND. |
 | 3 | I | **Compressor discharge temperature** | **D73** | NASA 820A, T-T+ 4554 | ×0.1 °C | CONFIRMED |
 | 4 | I | **Evaporator temperature** (outdoor coil) | **D74** (live) | NASA 8218, T-T+ D74 | ×0.1 °C | CONFIRMED |
-| 5 | I | **Outdoor-unit probe temperature** — the boiler forwards it ~2 s later as 3002 | **D79** | NASA 420C, T-T+ D06 | ×0.1 °C | CONFIRMED |
+| 5 | I | **Outdoor-unit probe temperature — RAW** (no P07 correction); the boiler forwards it ~2 s later as 3002 **after applying P07** | **D79** | NASA 420C | ×0.1 °C | CONFIRMED |
 | 6 | I | **Compressor temperature** (shell/top) | **D72** | NASA 8280, T-T+ 4585 | ×0.1 °C | CONFIRMED |
 | 10 | I | **Water target** — acknowledged by the HP | — | Water Outlet Target | ×0.1 °C | CONFIRMED |
 | 11 | I | **Compressor frequency** | **D71** (live) | NASA Compressor Freq, T-T+ D71 | Hz | CONFIRMED |
@@ -59,17 +59,17 @@ Verified on **three buses** (D+/D-, T-/T+, NASA) at standby and during a forced 
 | Reg | Meaning | Code | Scale | Confidence |
 |---|---|---|---|---|
 | 2000 | Operating mode (0 standby, 1 summer DHW, 2 cooling, 3 winter CH+DHW) | — | enum | CONFIRMED |
-| 2001 | Status flags (8/12); Dominus: `mb-water-request` | D09? (DHW request) | bitfield | CAND. |
+| 2001 | **Status flags** (bitfield): **bit 3 = always 1**; **bit 0 (8→9) = DHW request pending** — set ~9 min before every DHW cycle, cleared when the 3-way valve switches to DHW (15/15 cases); **bit 2 (8→12) = boiler anomaly active (2100 ≠ 0)** — matches to the second both E193 "Device in test mode" (service menu M) and E121 "Zone 1 panel missing". Dominus: `mb-water-request` | bit 0 = D09 (DHW request) | bitfield | CONFIRMED |
 | 2010 | Zone status / phase | — | bitfield | CONFIRMED |
 | 2015 / 2016 / 2017 | Zone setpoint / max / offset | — | ×0.1 °C | CONFIRMED |
-| 2090 | constant 4 | — | — | ? |
+| **2090** | **Time-program state** (boiler reply to 2294, ~5 s later): **4 = manual (bit 2), 64 = auto / comfort phase (bit 6), 128 = auto / economy phase (bit 7)** (64 → 128 seen 3 s after the boiler clock was moved past the end of a comfort window). Whether it tracks the Zone 1 CH or the DHW program is still open | — | bitfield | CONFIRMED (link), CAND. (scope) |
 | 2100 | Fault code (0 = none, e.g. 142 = Dominus missing) | — | enum | CONFIRMED |
 | 2218 / 2219 | Zone max / offset (copies) | — | ×0.1 °C | CONFIRMED |
 | 2293 | DHW temperature (copy) | — | ×0.1 °C | CONFIRMED |
 | **2300** | **Boiler clock**: [day of week 3 b][hour 5 b][minute 8 b], 1 = Mon … 7 = Sun; the boiler runs on CET (no DST) | **D140/D141/D142** | — | CONFIRMED |
 | **2302** | **Date**: high byte = day, low byte = month | **D143/D144** | — | CONFIRMED |
 | **2303** | **Year** | **D145** | — | CONFIRMED |
-| **3002** | Outdoor temperature | D06 | ×0.1 °C | CONFIRMED |
+| **3002** | Outdoor temperature **after the P07 probe correction** (P07 = +5 K → 3002 jumped 10.5 → 15.5 while the raw 0x1E I5 stayed) | D06 | ×0.1 °C | CONFIRMED |
 | **3003** | **Calculated flow setpoint** (heating curve + U03; 0 without demand) | **D04** (live) | ×0.1 °C | CONFIRMED |
 | 3009 / 3010 | Room temperature / humidity (panel echo) | — | ×0.1 °C / % | CONFIRMED |
 | **3011** | **Main generator (heat pump) flow** | **D20** (live) | ×0.1 °C | CONFIRMED |
@@ -79,7 +79,8 @@ Verified on **three buses** (D+/D-, T-/T+, NASA) at standby and during a forced 
 | **3015** | **Active DHW setpoint** used by the boiler (60 during anti-legionella) | D05 | ×0.1 °C | CONFIRMED |
 | 3016 | DHW cylinder temperature | D03 | ×0.1 °C | CONFIRMED |
 | 3031 | Board firmware version (600 = 6.00) | D91 | ×0.01 | CONFIRMED |
-| 6102 / 6150 | constant 0 / 1 | — | — | ? |
+| **6102** | **A31 "Zone 1 room thermostat"** passed to the panel: **RPT = 0, RP = 2** (RT probably 1). Changing A31 RPT → RP switched 6102 0 → 2, and back RP → RPT 2 → 0 (both directions verified) | **A31** | enum | CONFIRMED (RT = CAND.) |
+| 6150 | constant 1 | — | — | ? |
 
 ### Panel → boiler (R)
 | Reg | Meaning | Confidence |
@@ -89,7 +90,10 @@ Verified on **three buses** (D+/D-, T-/T+, NASA) at standby and during a forced 
 | 2005 / 2006 | **Room temperature / humidity** (the only values the boiler takes from the panel for control) | CONFIRMED |
 | 2015–2017 | Setpoint / max / offset | CONFIRMED |
 | 2095, 2290–2292 | DHW setpoint (+ copies) | CONFIRMED |
-| 2103, 2294, 6105, 6107 | constant 0 / 0 / 0 / 1 | ? |
+| 2103 | constant 0 | ? |
+| **2294** | **Panel "time programs active"**: −1 = not set, **0 = off (manual), 1 = auto**. Verified both ways; on panel connect the boiler writes 0 | CONFIRMED |
+| **6105** | **Panel "room-probe modulation" setting** (Service → Zone definition): −1 = not set (fresh panel), **0 = NO, 1 = YES**. On panel connect the boiler writes 0. Verified YES → 1 and NO → 0 | CONFIRMED |
+| **6107** | **Panel "dew-point setpoint correction"** (1 = on, 0 = off). Turning it off and on again on the panel switched 6107 1 → 0 → 1 (both directions verified) | CONFIRMED |
 | 2210 / 2211 | Comfort / Eco heating | CONFIRMED |
 | 2214 / 2215 / 2216 | Comfort / Eco cooling, humidity setting | CONFIRMED |
 | 2218 / 2219 | Max / offset (copies) | CONFIRMED |
@@ -138,7 +142,11 @@ Parameter **P15** (anti-legionella enable; P13 duration, P16 hour, P17 day) is *
 
 ## Still unknown — help welcome
 - 0x1E: I12, I15, I20, I37, I44–46, W5 (always 0), R2–6, R15–18; flags I18/21/41/42 — **D78** candidates (needs cooling or defrost data).
-- 0x29: 2090, 2103, 2294, 6102, 6105, 6107, 6150; bitfield 2001.
+- **Registers the boiler READS from panel 0x29**: 2000, 2005–2006, 2015–2017, 2095, 2103, 2210–2211, 2214–2216, 2218–2219, 2290–2292, 2294, 2310–2347, 2410–2416, 2490–2496, 2707, 3042, 6105, 6107. Only these can be controlled by an emulated panel; **6102 (A31) is never read**, so A31 cannot be set over the bus.
+- 0x29: 2103, 6150 (2001: bits 0 and 2 decoded, bit 3 always 1; 6102 = A31).
 - 0x33: 2012.
 
 The **bus sniffer** switch in the firmware logs every register change (log tag `sniff`) — a capture during cooling, defrost or heat-pump DHW would help close the remaining gaps.
+
+## Integration / service parameters and D+/D-
+Changing the gas/heat-pump integration parameters (I01–I10), A05, A12, A18, P07–P24, T02–T23, U11 or entering service menu M on the boiler panel does **not** change any D+/D- register, except: **2001 bit 2 + fault 2100 = E193** while in test mode (menu M), and **3002** when the outdoor-probe correction **P07** is changed. Integration parameters live on the T-/T+ BMS bus (see the sister project `immergas-magis-combo-tt-bms`).
