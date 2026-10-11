@@ -114,6 +114,7 @@ Edit the `substitutions:` block at the top of the YAML — these point to **your
 
 ## Setup
 
+1. Copy `immergas-magis-pro-combo-dd-modbus.yaml` together with `lww_guard.h`, `faults_i18n.h` and the `components/` folder into the same ESPHome config folder (the YAML includes them).
 1. `cp secrets.yaml.example secrets.yaml` and fill in WiFi + web UI credentials.
 2. Point the `substitutions:` sources to your HA sensors (see above).
 3. Flash `immergas-magis-pro-combo-dd-modbus.yaml` with ESPHome, wire the RS485 (with the **120 Ω** resistor), adopt in Home Assistant.
