@@ -2524,6 +2524,7 @@ sensor:
       return (float) id(dd_emu_33_ack_count);
   # Boiler clock (PDU 2300: bits 15-13 weekday 1 = Mon .. 7 = Sun, 12-8 hour, 7-0 minute) minus HA local time,
   # in minutes (+ ahead / - behind). The zone schedules run on the boiler clock. Resolution 1 min.
+  # Magis Combo V2 fw 5.03 + physical panel: 0 min on 11/10/2026 (summer time), i.e. that clock follows DST.
   - platform: template
     name: "Immergas - Boiler clock drift"
     id: controller_clock_drift
@@ -4505,8 +4506,10 @@ interval:
                   }
                 }
               }
-              // 2300 (boiler -> panel) = boiler clock [day of week 3b][hour 5b][minute 8b], 1 = Mon .. 7 = Sun (CET, no DST)
-              if (addr == 0x29 && kind == 'W' && reg == 2300) {
+              // 2300 = boiler clock [day of week 3b][hour 5b][minute 8b], 1 = Mon .. 7 = Sun (CET, no DST).
+              // Any frame on 0x29: a boiler WRITE, or the physical panel's READ reply (the boiler also reads 2300 from
+              // the panel - the emulator serves it). Some setups only carry the READ reply.
+              if (addr == 0x29 && (kind == 'W' || kind == 'R') && reg == 2300) {
                 static int last2300 = -99999;
                 if (value != last2300) {
                   last2300 = value;
