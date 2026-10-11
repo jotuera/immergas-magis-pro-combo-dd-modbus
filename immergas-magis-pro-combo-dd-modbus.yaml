@@ -86,11 +86,8 @@ esphome:
     priority: 800
     then:
       - lambda: |-
-          // v48: normalna polaryzacja DE/RE.
-          // LOW = RX/idle, HIGH = TX.
-          gpio_set_direction(GPIO_NUM_23, GPIO_MODE_OUTPUT);
-          gpio_set_level(GPIO_NUM_23, 0);
-          ESP_LOGW("dd_rs485", "v75 RS485 DE GPIO23 LOW idle; Dominus 0x33 + panel 0x29 + termostaty + chrono S1 (selekty dni) + bledy + faza S1 + status (no-RAW lean) v113 keepalive ready");
+          // RS485 DE (GPIO23) is driven by the UART hardware (uart: flow_control_pin), not from here.
+          ESP_LOGW("dd_rs485", "RS485 hardware DE on GPIO23; Dominus 0x33 + panels + thermostats + chrono + faults + status ready, fw ${project_version}");
 
 esp32:
   board: m5stack-atom
@@ -135,6 +132,11 @@ uart:
   id: dd_uart
   tx_pin: GPIO26
   rx_pin: GPIO32
+  # RS485 half-duplex in hardware (ESP-IDF UART_MODE_RS485_HALF_DUPLEX): the UART raises DE (RTS on GPIO23,
+  # HIGH = TX) right before the start bit and drops it after the last stop bit. write_array() returns at once:
+  # no flush()/busy-wait in the main loop. Previously DE was toggled in software with a 12/15 ms hold after
+  # every reply (~25-40 ms of blocked loop per frame, a few hundred frames per minute).
+  flow_control_pin: GPIO23
   baud_rate: 9600
   data_bits: 8
   parity: EVEN
@@ -4028,15 +4030,8 @@ interval:
               ESP_LOGE("dd_rs485", "BEZPIECZNIK v96: zablokowano TX na 0x1E (maszynownia) label=%s - emulator nie nadaje na adres 30", label);
               return;
             }
-            // v48 Isolated: shared function for emu29; Dominus 0x33 in this version has manual TX only.
-            // LOW = RX/idle, HIGH = TX. At 9600 8E1 a 9-byte frame takes ~10.3 ms, so we hold DE ~12 ms.
-            // No delay() before TX; just a short DE pre-drive so the transceiver switches direction.
-            gpio_set_level(GPIO_NUM_23, 1);
-            delayMicroseconds(120);
+            // DE handled by the UART hardware (flow_control_pin): queue the frame and return, no busy-wait.
             id(dd_uart).write_array(data.data(), data.size());
-            id(dd_uart).flush();
-            delayMicroseconds(12000);
-            gpio_set_level(GPIO_NUM_23, 0);
             id(dd_last_tx_ms) = millis();
             id(dd_emu_29_auto_tx_count)++;
             id(dd_emu_29_auto_tx_last_ms) = id(dd_last_tx_ms);
@@ -4180,13 +4175,9 @@ interval:
             // v53 (delay(22) yield) and v54 (delayMicroseconds(22000)) had a pre-delay and the frames
             // never reached the bus -> the pre-delay broke transmission. Panel 0x29 replies IMMEDIATELY
             // and the boiler accepts it - so 0x33 also replies immediately.
-            // gpio HIGH -> short pre-drive -> write+flush -> hold ~ frame time -> gpio LOW.
-            gpio_set_level(GPIO_NUM_23, 1);
-            delayMicroseconds(800);
+            // DE handled by the UART hardware (flow_control_pin): no pre-drive, no flush, no tail. The hardware
+            // asserts DE right before the start bit, so there is still no delay before TX, as required above.
             id(dd_uart).write_array(data.data(), data.size());
-            id(dd_uart).flush();
-            delayMicroseconds(15000);
-            gpio_set_level(GPIO_NUM_23, 0);
 
             id(dd_last_tx_ms) = millis();
             id(dd_emu_33_ack_count)++;
