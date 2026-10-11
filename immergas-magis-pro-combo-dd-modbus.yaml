@@ -77,6 +77,9 @@ substitutions:
 
 esphome:
   name: immergas-dd-atom
+  # Bus/HA arbitration for the registers the emulated Dominus serves (file next to this YAML).
+  includes:
+    - lww_guard.h
   friendly_name: Immergas D+D- Atom
   comment: "Immergas Dominus/Panel (D+/D-) emulator | author: ${author} | ${github_url}"
   project:
@@ -519,13 +522,6 @@ globals:
     restore_value: no
     initial_value: '3'
 
-  # Until the user picks a mode in HA, the emulator MIRRORS the boiler's mode (state adoption,
-  # no forcing at startup). After a choice, the emulator dictates the requested mode.
-  - id: mode_user_set
-    type: bool
-    restore_value: no
-    initial_value: 'false'
-
   # ------------------------------------------------------------
   # Dominus / Zone 1 - "Manage Zone" screen
   # ------------------------------------------------------------
@@ -620,45 +616,8 @@ globals:
     restore_value: yes
     initial_value: '300'
 
-  # v117 last-writer-wins: last value seen on the bus. The capture adopts ONLY when value != last_bus
-  # (a genuine change from the Dominus); on the boiler re-writing the same value it does NOT revert the
-  # HA change -> the slider holds and the boiler reads/propagates it (like a real panel). -32768 sentinel.
-  - id: zone1_setpoint_last_bus
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: zone1_offset_last_bus
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: dominus_comfort_heat_last_bus
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: dominus_eco_heat_last_bus
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: dominus_comfort_cool_last_bus
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: dominus_eco_cool_last_bus
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: dominus_humidity_last_bus
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: dominus_set_flow_last_bus
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: cwu_setpoint_last_bus
-    type: int
-    restore_value: no
-    initial_value: '-32768'
+  # v117 last-writer-wins for Zone 2/3 setpoints: last value seen on the bus (adopt only when it differs).
+  # Zone 1, the Dominus settings, DHW and the mode use lww_guard.h instead.
   - id: zone2_setpoint_last_bus
     type: int
     restore_value: no
@@ -976,6 +935,7 @@ number:
       return id(cwu_setpoint_raw) / 10.0f;
     set_action:
       - lambda: |-
+          lww::local_write(lww::DHW_SETPOINT, id(cwu_setpoint_raw), (int) round(x * 10.0f));
           id(cwu_setpoint_raw) = (int) round(x * 10.0f);
           ESP_LOGW("dd_control", "v57 STEROWANIE CWU: zadana %.1f stopni raw=%d. Emulator zwraca to na READ 2095.", x, id(cwu_setpoint_raw));
           id(cwu_setpoint_number).publish_state(x);  // v61: natychmiastowy update suwaka w HA
@@ -998,6 +958,7 @@ number:
     set_action:
       - lambda: |-
           int raw = (int) round(x * 10.0f);
+          lww::local_write(lww::ZONE1_SETPOINT, id(zone1_setpoint_raw), raw);
           id(zone1_setpoint_raw) = raw;
           ESP_LOGW("dd_control", "v18 anchor-zone-write: zlecono zapis Strefy 1: zadana %.1f°C raw=%d. Czekam na naturalny ACK jako kotwicę.", x, raw);
           id(zone1_setpoint_number).publish_state(x);  // v61: natychmiastowy update suwaka w HA
@@ -1017,6 +978,7 @@ number:
     set_action:
       - lambda: |-
           int raw = (int) round(x * 10.0f);
+          lww::local_write(lww::ZONE1_OFFSET, id(zone1_offset_raw), raw);
           id(zone1_offset_raw) = raw;
           ESP_LOGW("dd_control", "v18 anchor-zone-write: zlecono zapis U03 / Offset Flow: %.1f raw=%d. Czekam na naturalny ACK jako kotwicę.", x, raw);
           id(zone1_offset_number).publish_state(x);  // v61: natychmiastowy update suwaka w HA
@@ -1116,6 +1078,7 @@ number:
       return id(dominus_comfort_heat_raw) / 10.0f;
     set_action:
       - lambda: |-
+          lww::local_write(lww::COMFORT_HEAT, id(dominus_comfort_heat_raw), (int) round(x * 10.0f));
           id(dominus_comfort_heat_raw) = (int) round(x * 10.0f);
           ESP_LOGW("dd_control", "Zlecono Set Comfort Heat %.1f°C raw=%d", x, id(dominus_comfort_heat_raw));
           id(number_dominus_comfort_heat).publish_state(x);  // v61: natychmiastowy update suwaka
@@ -1134,6 +1097,7 @@ number:
       return id(dominus_eco_heat_raw) / 10.0f;
     set_action:
       - lambda: |-
+          lww::local_write(lww::ECO_HEAT, id(dominus_eco_heat_raw), (int) round(x * 10.0f));
           id(dominus_eco_heat_raw) = (int) round(x * 10.0f);
           ESP_LOGW("dd_control", "Zlecono Set Eco Heat %.1f°C raw=%d", x, id(dominus_eco_heat_raw));
           id(number_dominus_eco_heat).publish_state(x);  // v61: natychmiastowy update suwaka
@@ -1152,6 +1116,7 @@ number:
       return id(dominus_comfort_cool_raw) / 10.0f;
     set_action:
       - lambda: |-
+          lww::local_write(lww::COMFORT_COOL, id(dominus_comfort_cool_raw), (int) round(x * 10.0f));
           id(dominus_comfort_cool_raw) = (int) round(x * 10.0f);
           ESP_LOGW("dd_control", "Zlecono Set Comfort Cool %.1f°C raw=%d", x, id(dominus_comfort_cool_raw));
           id(number_dominus_comfort_cool).publish_state(x);  // v61: natychmiastowy update suwaka
@@ -1170,6 +1135,7 @@ number:
       return id(dominus_eco_cool_raw) / 10.0f;
     set_action:
       - lambda: |-
+          lww::local_write(lww::ECO_COOL, id(dominus_eco_cool_raw), (int) round(x * 10.0f));
           id(dominus_eco_cool_raw) = (int) round(x * 10.0f);
           ESP_LOGW("dd_control", "Zlecono Set Eco Cool %.1f°C raw=%d", x, id(dominus_eco_cool_raw));
           id(number_dominus_eco_cool).publish_state(x);  // v61: natychmiastowy update suwaka
@@ -1188,6 +1154,7 @@ number:
       return id(dominus_humidity_raw);
     set_action:
       - lambda: |-
+          lww::local_write(lww::HUMIDITY, id(dominus_humidity_raw), (int) round(x));
           id(dominus_humidity_raw) = (int) round(x);
           ESP_LOGW("dd_control", "Zlecono Set Umidity %.0f%% raw=%d", x, id(dominus_humidity_raw));
           id(number_dominus_humidity).publish_state(x);  // v61: natychmiastowy update suwaka
@@ -1206,6 +1173,7 @@ number:
       return id(dominus_set_flow_raw) / 10.0f;
     set_action:
       - lambda: |-
+          lww::local_write(lww::SET_FLOW, id(dominus_set_flow_raw), (int) round(x * 10.0f));
           id(dominus_set_flow_raw) = (int) round(x * 10.0f);
           ESP_LOGW("dd_control", "Zlecono Set Flow %.1f°C raw=%d", x, id(dominus_set_flow_raw));
           id(number_dominus_set_flow).publish_state(x);  // v61: natychmiastowy update suwaka
@@ -2439,10 +2407,11 @@ select:
 
           // v57 MODE CONTROL (passive, as Dominus): we set the REQUESTED mode, which
           // the emulator returns on READ 2000. The boiler reads and applies it. No active writing.
-          // mode_user_set=true -> from now the emulator DICTATES the mode, ignoring the boiler's 2000 write-back.
+          // The command stays pending until the boiler confirms it (lww_guard.h); afterwards a mode changed on the
+          // panel is adopted again (before: after the first HA choice the panel could no longer change the mode).
+          lww::local_write(lww::OPERATING_MODE, id(operating_mode_raw), mode);
           id(operating_mode_raw) = mode;
           id(operating_mode_target_raw) = mode;
-          id(mode_user_set) = true;
 
           // v59/v60: natychmiastowe odswiezenie w HA (bez czekania na poll) - select + sensor.
           id(operating_mode_select).publish_state(x);
@@ -4603,11 +4572,10 @@ interval:
             // 0x33 usually changes first, 0x29 is the copy/execution.
             // ------------------------------------------------------------
             if ((addr == 0x29 || addr == 0x33) && reg == REG_MODE) {
-              // v57: the boiler WRITES BACK the current mode -> this is the REPORTED state (for display).
-              // the REQUESTED mode (operating_mode_raw, returned on READ 2000) is OVERWRITTEN only until
-              // the user picks a mode in HA (boiler state adoption at startup, no forcing).
+              // The boiler writes back the current mode (reported state). A change made elsewhere (panel) is
+              // adopted as the mode the Dominus serves; HA commands and stale echoes are arbitrated (lww_guard.h).
               id(operating_mode_reported) = value;
-              if (!id(mode_user_set)) {
+              if (lww::adopt(lww::OPERATING_MODE, "operating_mode", source, addr, id(operating_mode_raw), value)) {
                 id(operating_mode_raw) = value;
               }
 
@@ -4651,7 +4619,7 @@ interval:
             if (reg == REG_ZONE1_SETPOINT) {
               if (addr == 0x2A) { if (value != id(zone2_setpoint_last_bus)) { id(zone2_setpoint_raw) = value; id(zone2_setpoint_number).publish_state(value / 10.0f); } id(zone2_setpoint_last_bus) = value; }  // v118 last-writer-wins
               else if (addr == 0x2B) { if (value != id(zone3_setpoint_last_bus)) { id(zone3_setpoint_raw) = value; id(zone3_setpoint_number).publish_state(value / 10.0f); } id(zone3_setpoint_last_bus) = value; }  // v118 last-writer-wins
-              else { if (value != id(zone1_setpoint_last_bus)) { id(zone1_setpoint_raw) = value; id(zone1_setpoint_number).publish_state(value / 10.0f); } id(zone1_setpoint_last_bus) = value; }  // v117 last-writer-wins
+              else if (lww::adopt(lww::ZONE1_SETPOINT, "zone1_setpoint", source, addr, id(zone1_setpoint_raw), value)) { id(zone1_setpoint_raw) = value; id(zone1_setpoint_number).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X setpoint PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -4659,7 +4627,7 @@ interval:
             if (reg == REG_ZONE1_OFFSET || reg == REG_ZONE1_OFFSET_COPY) {
               if (addr == 0x2A) { id(zone2_offset_raw) = value; id(zone2_offset_number).publish_state(value / 10.0f); }
               else if (addr == 0x2B) { id(zone3_offset_raw) = value; id(zone3_offset_number).publish_state(value / 10.0f); }
-              else { if (value != id(zone1_offset_last_bus)) { id(zone1_offset_raw) = value; id(zone1_offset_number).publish_state(value / 10.0f); } id(zone1_offset_last_bus) = value; }  // v117 last-writer-wins
+              else if (lww::adopt(lww::ZONE1_OFFSET, "zone1_offset", source, addr, id(zone1_offset_raw), value)) { id(zone1_offset_raw) = value; id(zone1_offset_number).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X offset PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -4667,17 +4635,21 @@ interval:
             // ------------------------------------------------------------
             // DHW / external
             // ------------------------------------------------------------
-            if (reg == REG_DHW_SETPOINT || reg == REG_DHW_SETPOINT_COPY_1 || reg == REG_DHW_SETPOINT_COPY_2 || reg == REG_DHW_SETPOINT_COPY_3) {
-              // v1.2.0 ANTI-LEGIONELLA FIX: adopt ONLY device replies (READ: Dominus 0x33 / physical panel 0x29).
-              // A boiler WRITE (e.g. 3015 "DHW setpoint" to the panel) is the boiler's ACTIVE setpoint - 60 C during the
-              // anti-legionella cycle. Adopting it made the emulator (as the panel) feed 60 C back -> setpoint stuck at 60.
-              bool cwu_from_device = (source[0] == 'R');
-              if (cwu_from_device && value != id(cwu_setpoint_last_bus)) {  // v117 last-writer-wins
+            if (reg == REG_DHW_SETPOINT_COPY_1 || reg == REG_DHW_SETPOINT_COPY_2 || reg == REG_DHW_SETPOINT_COPY_3) {
+              // Copies (2291/2292/3015) are never adopted. They lag the master 2095 during propagation (adopting them
+              // made the HA value flip 57 -> 55 -> 57), and 3015 is the boiler's ACTIVE setpoint - 60 C during the
+              // anti-legionella cycle (v1.2.0 fix: adopting it left the setpoint stuck at 60).
+              ESP_LOGD("dd_value", "%s DHW setpoint copy PDU %u = %d (ignored)", source, reg, value);
+              return;
+            }
+            if (reg == REG_DHW_SETPOINT) {
+              // Master DHW setpoint 2095: arbitrated like the other served registers (lww_guard.h). A change made on
+              // the panel reaches the Dominus as a boiler write, so writes are adopted too.
+              if (lww::adopt(lww::DHW_SETPOINT, "dhw_setpoint", source, addr, id(cwu_setpoint_raw), value)) {
                 id(cwu_setpoint_raw) = value;
                 id(cwu_setpoint_number).publish_state(value / 10.0f);
               }
-              if (cwu_from_device) id(cwu_setpoint_last_bus) = value;
-              ESP_LOGI("dd_value", "%s CWU setpoint/copy PDU %u = %d / %.1f°C", source, reg, value, value / 10.0f);
+              ESP_LOGI("dd_value", "%s DHW setpoint PDU %u = %d / %.1f°C", source, reg, value, value / 10.0f);
               return;
             }
 
@@ -4701,7 +4673,7 @@ interval:
             if (reg == REG_COMFORT_HEAT) {
               if (addr == 0x2A) { id(dominus_comfort_heat_z2_raw) = value; id(number_dominus_comfort_heat_z2).publish_state(value / 10.0f); }
               else if (addr == 0x2B) { id(dominus_comfort_heat_z3_raw) = value; id(number_dominus_comfort_heat_z3).publish_state(value / 10.0f); }
-              else { if (value != id(dominus_comfort_heat_last_bus)) { id(dominus_comfort_heat_raw) = value; id(number_dominus_comfort_heat).publish_state(value / 10.0f); } id(dominus_comfort_heat_last_bus) = value; }  // v117 last-writer-wins
+              else if (lww::adopt(lww::COMFORT_HEAT, "dominus_comfort_heat", source, addr, id(dominus_comfort_heat_raw), value)) { id(dominus_comfort_heat_raw) = value; id(number_dominus_comfort_heat).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Comfort Heat PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -4709,7 +4681,7 @@ interval:
             if (reg == REG_ECO_HEAT) {
               if (addr == 0x2A) { id(dominus_eco_heat_z2_raw) = value; id(number_dominus_eco_heat_z2).publish_state(value / 10.0f); }
               else if (addr == 0x2B) { id(dominus_eco_heat_z3_raw) = value; id(number_dominus_eco_heat_z3).publish_state(value / 10.0f); }
-              else { if (value != id(dominus_eco_heat_last_bus)) { id(dominus_eco_heat_raw) = value; id(number_dominus_eco_heat).publish_state(value / 10.0f); } id(dominus_eco_heat_last_bus) = value; }  // v117 last-writer-wins
+              else if (lww::adopt(lww::ECO_HEAT, "dominus_eco_heat", source, addr, id(dominus_eco_heat_raw), value)) { id(dominus_eco_heat_raw) = value; id(number_dominus_eco_heat).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Eco Heat PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -4717,7 +4689,7 @@ interval:
             if (reg == REG_COMFORT_COOL) {
               if (addr == 0x2A) { id(dominus_comfort_cool_z2_raw) = value; id(number_dominus_comfort_cool_z2).publish_state(value / 10.0f); }
               else if (addr == 0x2B) { id(dominus_comfort_cool_z3_raw) = value; id(number_dominus_comfort_cool_z3).publish_state(value / 10.0f); }
-              else { if (value != id(dominus_comfort_cool_last_bus)) { id(dominus_comfort_cool_raw) = value; id(number_dominus_comfort_cool).publish_state(value / 10.0f); } id(dominus_comfort_cool_last_bus) = value; }  // v117 last-writer-wins
+              else if (lww::adopt(lww::COMFORT_COOL, "dominus_comfort_cool", source, addr, id(dominus_comfort_cool_raw), value)) { id(dominus_comfort_cool_raw) = value; id(number_dominus_comfort_cool).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Comfort Cool PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -4725,7 +4697,7 @@ interval:
             if (reg == REG_ECO_COOL_COPY || reg == REG_ECO_COOL) {
               if (addr == 0x2A) { id(dominus_eco_cool_z2_raw) = value; id(number_dominus_eco_cool_z2).publish_state(value / 10.0f); }
               else if (addr == 0x2B) { id(dominus_eco_cool_z3_raw) = value; id(number_dominus_eco_cool_z3).publish_state(value / 10.0f); }
-              else { if (value != id(dominus_eco_cool_last_bus)) { id(dominus_eco_cool_raw) = value; id(number_dominus_eco_cool).publish_state(value / 10.0f); } id(dominus_eco_cool_last_bus) = value; }  // v117 last-writer-wins
+              else if (lww::adopt(lww::ECO_COOL, "dominus_eco_cool", source, addr, id(dominus_eco_cool_raw), value)) { id(dominus_eco_cool_raw) = value; id(number_dominus_eco_cool).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Eco Cool PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -4733,7 +4705,7 @@ interval:
             if (reg == REG_HUMIDITY) {
               if (addr == 0x2A) { id(dominus_humidity_z2_raw) = value; id(number_dominus_humidity_z2).publish_state(value); }
               else if (addr == 0x2B) { id(dominus_humidity_z3_raw) = value; id(number_dominus_humidity_z3).publish_state(value); }
-              else { if (value != id(dominus_humidity_last_bus)) { id(dominus_humidity_raw) = value; id(number_dominus_humidity).publish_state(value); } id(dominus_humidity_last_bus) = value; }  // v117 last-writer-wins
+              else if (lww::adopt(lww::HUMIDITY, "dominus_humidity", source, addr, id(dominus_humidity_raw), value)) { id(dominus_humidity_raw) = value; id(number_dominus_humidity).publish_state(value); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Umidity PDU %u = %d%%", source, addr, reg, value);
               return;
             }
@@ -4741,7 +4713,7 @@ interval:
             if (reg == REG_SET_FLOW) {
               if (addr == 0x2A) { id(dominus_set_flow_z2_raw) = value; id(number_dominus_set_flow_z2).publish_state(value / 10.0f); }
               else if (addr == 0x2B) { id(dominus_set_flow_z3_raw) = value; id(number_dominus_set_flow_z3).publish_state(value / 10.0f); }
-              else { if (value != id(dominus_set_flow_last_bus)) { id(dominus_set_flow_raw) = value; id(number_dominus_set_flow).publish_state(value / 10.0f); } id(dominus_set_flow_last_bus) = value; }  // v117 last-writer-wins
+              else if (lww::adopt(lww::SET_FLOW, "dominus_set_flow", source, addr, id(dominus_set_flow_raw), value)) { id(dominus_set_flow_raw) = value; id(number_dominus_set_flow).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Flow PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -5025,7 +4997,10 @@ interval:
 
               // v93: online = a PHYSICAL device REPLIED (not our query).
               if (addr == 0x33) id(dd_last_33_read_ms) = millis();
-              else if (addr == 0x29) id(dd_last_29_read_ms) = millis();
+              else if (addr == 0x29) {
+                id(dd_last_29_read_ms) = millis();
+                lww::panel_reply();  // starts the panel warm-up window after a reconnect/boot (lww_guard.h)
+              }
               else if (addr == 0x2A) id(dd_last_2a_read_ms) = millis();
               else if (addr == 0x2B) id(dd_last_2b_read_ms) = millis();
 
