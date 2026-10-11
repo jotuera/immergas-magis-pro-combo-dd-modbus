@@ -89,6 +89,13 @@ esphome:
           // RS485 DE (GPIO23) is driven by the UART hardware (uart: flow_control_pin), not from here.
           ESP_LOGW("dd_rs485", "RS485 hardware DE on GPIO23; Dominus 0x33 + panels + thermostats + chrono + faults + status ready, fw ${project_version}");
 
+# Bus-backed climate entities (components/bus_climate next to this YAML).
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [bus_climate]
+
 esp32:
   board: m5stack-atom
   framework:
@@ -661,26 +668,6 @@ globals:
     restore_value: no
     initial_value: '-32768'
 
-  # v118 last-writer-wins delta-sync: last thermostat target we reconciled with 'raw'. The 1s loop sets
-  # raw = thermostat ONLY when target != thermo_last (user REALLY moved the thermostat); otherwise raw
-  # (slider/bus) is kept and the thermostat is best-effort synced. Initialized in the first loop tick.
-  - id: zone1_thermo_last
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: cwu_thermo_last
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: zone2_thermo_last
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: zone3_thermo_last
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-
   # ------------------------------------------------------------
   # Dodatkowe 0x29 - diagnostyczne/kandydaci
   # ------------------------------------------------------------
@@ -992,7 +979,6 @@ number:
           id(cwu_setpoint_raw) = (int) round(x * 10.0f);
           ESP_LOGW("dd_control", "v57 STEROWANIE CWU: zadana %.1f stopni raw=%d. Emulator zwraca to na READ 2095.", x, id(cwu_setpoint_raw));
           id(cwu_setpoint_number).publish_state(x);  // v61: natychmiastowy update suwaka w HA
-          id(cwu_thermostat).make_call().set_target_temperature_low(x).set_target_temperature(x).perform();  // v65: sync termostat
 
   # ------------------------------------------------------------
   # Zone 1 - active setpoint and U03/Offset
@@ -1004,7 +990,7 @@ number:
     unit_of_measurement: "°C"
     min_value: 5
     max_value: 35
-    step: 0.5
+    step: 0.1
     mode: slider
     optimistic: false
     lambda: |-
@@ -1015,7 +1001,6 @@ number:
           id(zone1_setpoint_raw) = raw;
           ESP_LOGW("dd_control", "v18 anchor-zone-write: zlecono zapis Strefy 1: zadana %.1f°C raw=%d. Czekam na naturalny ACK jako kotwicę.", x, raw);
           id(zone1_setpoint_number).publish_state(x);  // v61: natychmiastowy update suwaka w HA
-          id(co_thermostat).make_call().set_target_temperature_low(x).set_target_temperature(x).perform();  // v65: sync termostat
 
   - platform: template
     name: "Immergas - U03 Heating offset (CH) zone 1"
@@ -1056,7 +1041,6 @@ number:
           id(zone2_setpoint_raw) = (int) round(x * 10.0f);
           ESP_LOGW("dd_control", "v96 Strefa 2 zadana %.1f°C raw=%d (placeholder - backend 0x2A do zrobienia)", x, id(zone2_setpoint_raw));
           id(zone2_setpoint_number).publish_state(x);
-          id(co_thermostat_2).make_call().set_target_temperature_low(x).set_target_temperature(x).perform();
 
   - platform: template
     name: "Immergas - CH Setpoint Zone 3"
@@ -1076,7 +1060,6 @@ number:
           id(zone3_setpoint_raw) = (int) round(x * 10.0f);
           ESP_LOGW("dd_control", "v96 Strefa 3 zadana %.1f°C raw=%d (placeholder - backend 0x2B do zrobienia)", x, id(zone3_setpoint_raw));
           id(zone3_setpoint_number).publish_state(x);
-          id(co_thermostat_3).make_call().set_target_temperature_low(x).set_target_temperature(x).perform();
 
   - platform: template
     name: "Immergas - U04 Heating offset (CH) zone 2"
@@ -1126,7 +1109,7 @@ number:
     unit_of_measurement: "°C"
     min_value: 5
     max_value: 35
-    step: 0.5
+    step: 0.1
     mode: slider
     optimistic: false
     lambda: |-
@@ -1144,7 +1127,7 @@ number:
     unit_of_measurement: "°C"
     min_value: 5
     max_value: 35
-    step: 0.5
+    step: 0.1
     mode: slider
     optimistic: false
     lambda: |-
@@ -1162,7 +1145,7 @@ number:
     unit_of_measurement: "°C"
     min_value: 5
     max_value: 35
-    step: 0.5
+    step: 0.1
     mode: slider
     optimistic: false
     lambda: |-
@@ -1180,7 +1163,7 @@ number:
     unit_of_measurement: "°C"
     min_value: 5
     max_value: 35
-    step: 0.5
+    step: 0.1
     mode: slider
     optimistic: false
     lambda: |-
@@ -3051,42 +3034,6 @@ sensor:
       return id(pdu_2b_version_raw) / 100.0f;
     update_interval: 30s
 
-  # v65: temp sensors for the thermostats (current temperature). Internal - climate only.
-  - platform: template
-    id: co_climate_temp
-    name: "co_climate_temp"
-    internal: true
-    unit_of_measurement: "°C"
-    lambda: |-
-      return id(ha_room_temp_raw) / 10.0f;   // room temp fed to the boiler (average from HA)
-    update_interval: 5s
-  - platform: template
-    id: co_climate_temp_2
-    name: "co_climate_temp_2"
-    internal: true
-    unit_of_measurement: "°C"
-    lambda: |-
-      if (!id(dd_emulate_2a_diag)) return NAN;
-      return id(ha_room_temp_2_raw) / 10.0f;
-    update_interval: 5s
-  - platform: template
-    id: co_climate_temp_3
-    name: "co_climate_temp_3"
-    internal: true
-    unit_of_measurement: "°C"
-    lambda: |-
-      if (!id(dd_emulate_2b_diag)) return NAN;
-      return id(ha_room_temp_3_raw) / 10.0f;
-    update_interval: 5s
-  - platform: template
-    id: cwu_climate_temp
-    name: "cwu_climate_temp"
-    internal: true
-    unit_of_measurement: "°C"
-    lambda: |-
-      return id(dhw_temp_raw) > 0 ? id(dhw_temp_raw) / 10.0f : 45.0f;  // real DHW temp (3016)
-    update_interval: 5s
-
 text_sensor:
 
   # v1.2.0
@@ -3469,154 +3416,200 @@ binary_sensor:
       if (id(dd_last_1e_read_ms) == 0) return false;
       return (millis() - id(dd_last_1e_read_ms)) < 30000;
 
-# v65: climate THERMOSTATS. The boiler does the real regulation - here just target <-> setpoint (raw)
-# plus a view of the current value. The heat/idle indicator is cosmetic (heat/idle is logger only).
+# Climate entities backed by the bus (components/bus_climate). The boiler does the real regulation: state is
+# what the boiler reports (setpoint 2015, mode 2000, phase/request 2010), there is no local control loop.
+# Commands from HA go through the existing number/select entities, i.e. the same write path as the sliders.
+# Replaces the v65 "thermostat" climates and the v118 1 s delta-sync loop: a thermostat platform keeps its own
+# target and runs its own heat/idle logic, so it could disagree with the boiler and needed a sync loop.
+# Presets: Comfort/Eco from the phase the boiler declares in 2010 (bit6 Comfort, bit7 Eco, bit2 Manual).
+# Manual (temporary override, not tied to a Comfort/Eco level) = HA "no preset" (NONE).
+# Choosing Comfort/Eco writes the matching level (heat or cool, by mode) into the zone setpoint: during an Eco
+# time slot, Comfort makes the boiler switch to Manual - that is the boiler's behaviour, shown as is.
 climate:
-  - platform: thermostat
+  - platform: bus_climate
     name: "Immergas - Thermostat Zone 1 (CH)"
     id: co_thermostat
-    sensor: co_climate_temp
-    min_idle_time: 0s
-    min_heating_off_time: 0s
-    min_heating_run_time: 0s
+    icon: mdi:radiator
+    update_interval: 2s
+    supported_modes: [HEAT, COOL]
     visual:
       min_temperature: 5
       max_temperature: 35
-      temperature_step: 0.5
-    default_preset: Dom
-    preset:
-      - name: Dom
-        default_target_temperature_low: 21
-    heat_action:
-      - logger.log: "CO: ponizej zadanej (piec grzeje)"
-    idle_action:
-      - logger.log: "CO: zadana osiagnieta"
+      temperature_step:
+        target_temperature: 0.1
+        current_temperature: 0.1
+    current_temperature_lambda: |-
+      if (id(ha_room_temp_raw) <= 0) return NAN;
+      return id(ha_room_temp_raw) / 10.0f;
+    current_humidity_lambda: |-
+      if (id(ha_room_humidity_raw) <= 0) return NAN;
+      return (float) id(ha_room_humidity_raw);
+    target_temperature_lambda: |-
+      return id(zone1_setpoint_raw) / 10.0f;
+    mode_lambda: |-
+      switch (id(operating_mode_reported)) {
+        case 3: return climate::CLIMATE_MODE_HEAT;
+        case 2: return climate::CLIMATE_MODE_COOL;
+        default: return climate::CLIMATE_MODE_OFF;
+      }
+    action_lambda: |-
+      int m = id(operating_mode_reported);
+      if (m != 2 && m != 3) return climate::CLIMATE_ACTION_OFF;
+      if ((id(dd_zone1_status_raw) & 0x08) == 0) return climate::CLIMATE_ACTION_IDLE;  // 2010 bit3 = request
+      return (m == 3) ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_COOLING;
+    set_target_temperature_action:
+      - lambda: |-
+          id(zone1_setpoint_number).make_call().set_value(x).perform();
+    supported_presets: [COMFORT, ECO, NONE]
+    preset_lambda: |-
+      int st = id(dd_zone1_status_raw) & 0xFF;
+      if (st & 0x40) return std::string("COMFORT");
+      if (st & 0x80) return std::string("ECO");
+      if (st & 0x04) return std::string("NONE");
+      return {};
+    set_preset_action:
+      - lambda: |-
+          // NONE (= Manual) is a state, not a command -> ignored.
+          bool cool = (id(operating_mode_reported) == 2);
+          int raw;
+          if (x == "COMFORT") raw = cool ? id(dominus_comfort_cool_raw) : id(dominus_comfort_heat_raw);
+          else if (x == "ECO") raw = cool ? id(dominus_eco_cool_raw) : id(dominus_eco_heat_raw);
+          else return;
+          ESP_LOGI("climate_z1", "Preset %s (%s) -> setpoint %.1f", x.c_str(), cool ? "cooling" : "heating", raw / 10.0f);
+          id(zone1_setpoint_number).make_call().set_value(raw / 10.0f).perform();
+    set_mode_action:
+      - lambda: |-
+          // OFF = Summer (DHW only): heating/cooling off, hot water kept. Standby stays on the mode select.
+          const char *opt = "Summer DHW";
+          if (x == climate::CLIMATE_MODE_HEAT) opt = "Winter CH+DHW";
+          else if (x == climate::CLIMATE_MODE_COOL) opt = "Cooling";
+          id(operating_mode_select).make_call().set_option(opt).perform();
 
-  - platform: thermostat
+  - platform: bus_climate
     name: "Immergas - DHW Thermostat"
     id: cwu_thermostat
-    sensor: cwu_climate_temp
-    min_idle_time: 0s
-    min_heating_off_time: 0s
-    min_heating_run_time: 0s
+    icon: mdi:water-boiler
+    update_interval: 2s
+    supported_modes: [HEAT]
     visual:
       min_temperature: 30
       max_temperature: 60
-      temperature_step: 0.5
-    default_preset: Dom
-    preset:
-      - name: Dom
-        default_target_temperature_low: 49
-    heat_action:
-      - logger.log: "CWU: ponizej zadanej"
-    idle_action:
-      - logger.log: "CWU: zadana osiagnieta"
+      temperature_step:
+        target_temperature: 0.5
+        current_temperature: 0.1
+    current_temperature_lambda: |-
+      if (id(dhw_temp_raw) <= 0) return NAN;
+      return id(dhw_temp_raw) / 10.0f;
+    target_temperature_lambda: |-
+      return id(cwu_setpoint_raw) / 10.0f;
+    mode_lambda: |-
+      // DHW is active in every mode except Standby. Not switchable from here (no set_mode_action):
+      // turning DHW off means Standby, which also stops heating -> use the mode select.
+      return (id(operating_mode_reported) == 0) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
+    action_lambda: |-
+      if (id(operating_mode_reported) == 0) return climate::CLIMATE_ACTION_OFF;
+      return id(piec_zadanie_cwu_oczek).state ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;  // 2001 bit0
+    set_target_temperature_action:
+      - lambda: |-
+          id(cwu_setpoint_number).make_call().set_value(x).perform();
 
-  # v94/v108: CH thermostats for Zone 2 and 3 (restored). current temp from ha_room_temp_2/3_raw (NAN when
-  # zone OFF - v105); target = slider. climate can't be made "unavailable" in ESPHome - target may
-  # show a value when the zone is OFF (platform limitation, accepted).
-  - platform: thermostat
+  # Zone 2/3: same model. Current temperature = the zone's room value (NAN when that zone's panel emulation
+  # is OFF); phase/request from 2010 written to 0x2A/0x2B (multi-zone setups only, A13).
+  - platform: bus_climate
     name: "Immergas - Thermostat Zone 2 (CH)"
     id: co_thermostat_2
-    sensor: co_climate_temp_2
-    min_idle_time: 0s
-    min_heating_off_time: 0s
-    min_heating_run_time: 0s
+    icon: mdi:radiator
+    update_interval: 2s
+    supported_modes: [HEAT, COOL]
     visual:
       min_temperature: 5
       max_temperature: 35
-      temperature_step: 0.5
-    default_preset: Dom
-    preset:
-      - name: Dom
-        default_target_temperature_low: 21
-    heat_action:
-      - logger.log: "CO Strefa 2: ponizej zadanej"
-    idle_action:
-      - logger.log: "CO Strefa 2: zadana osiagnieta"
+      temperature_step:
+        target_temperature: 0.5
+        current_temperature: 0.1
+    current_temperature_lambda: |-
+      if (!id(dd_emulate_2a_diag) || id(ha_room_temp_2_raw) <= 0) return NAN;
+      return id(ha_room_temp_2_raw) / 10.0f;
+    target_temperature_lambda: |-
+      return id(zone2_setpoint_raw) / 10.0f;
+    mode_lambda: |-
+      switch (id(operating_mode_reported)) {
+        case 3: return climate::CLIMATE_MODE_HEAT;
+        case 2: return climate::CLIMATE_MODE_COOL;
+        default: return climate::CLIMATE_MODE_OFF;
+      }
+    action_lambda: |-
+      int m = id(operating_mode_reported);
+      if (m != 2 && m != 3) return climate::CLIMATE_ACTION_OFF;
+      if ((id(dd_zone2_status_raw) & 0x08) == 0) return climate::CLIMATE_ACTION_IDLE;
+      return (m == 3) ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_COOLING;
+    set_target_temperature_action:
+      - lambda: |-
+          id(zone2_setpoint_number).make_call().set_value(x).perform();
+    supported_presets: [COMFORT, ECO, NONE]
+    preset_lambda: |-
+      int st = id(dd_zone2_status_raw) & 0xFF;
+      if (st & 0x40) return std::string("COMFORT");
+      if (st & 0x80) return std::string("ECO");
+      if (st & 0x04) return std::string("NONE");
+      return {};
+    set_preset_action:
+      - lambda: |-
+          bool cool = (id(operating_mode_reported) == 2);
+          int raw;
+          if (x == "COMFORT") raw = cool ? id(dominus_comfort_cool_z2_raw) : id(dominus_comfort_heat_z2_raw);
+          else if (x == "ECO") raw = cool ? id(dominus_eco_cool_z2_raw) : id(dominus_eco_heat_z2_raw);
+          else return;
+          id(zone2_setpoint_number).make_call().set_value(raw / 10.0f).perform();
 
-  - platform: thermostat
+  - platform: bus_climate
     name: "Immergas - Thermostat Zone 3 (CH)"
     id: co_thermostat_3
-    sensor: co_climate_temp_3
-    min_idle_time: 0s
-    min_heating_off_time: 0s
-    min_heating_run_time: 0s
+    icon: mdi:radiator
+    update_interval: 2s
+    supported_modes: [HEAT, COOL]
     visual:
       min_temperature: 5
       max_temperature: 35
-      temperature_step: 0.5
-    default_preset: Dom
-    preset:
-      - name: Dom
-        default_target_temperature_low: 21
-    heat_action:
-      - logger.log: "CO Strefa 3: ponizej zadanej"
-    idle_action:
-      - logger.log: "CO Strefa 3: zadana osiagnieta"
+      temperature_step:
+        target_temperature: 0.5
+        current_temperature: 0.1
+    current_temperature_lambda: |-
+      if (!id(dd_emulate_2b_diag) || id(ha_room_temp_3_raw) <= 0) return NAN;
+      return id(ha_room_temp_3_raw) / 10.0f;
+    target_temperature_lambda: |-
+      return id(zone3_setpoint_raw) / 10.0f;
+    mode_lambda: |-
+      switch (id(operating_mode_reported)) {
+        case 3: return climate::CLIMATE_MODE_HEAT;
+        case 2: return climate::CLIMATE_MODE_COOL;
+        default: return climate::CLIMATE_MODE_OFF;
+      }
+    action_lambda: |-
+      int m = id(operating_mode_reported);
+      if (m != 2 && m != 3) return climate::CLIMATE_ACTION_OFF;
+      if ((id(dd_zone3_status_raw) & 0x08) == 0) return climate::CLIMATE_ACTION_IDLE;
+      return (m == 3) ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_COOLING;
+    set_target_temperature_action:
+      - lambda: |-
+          id(zone3_setpoint_number).make_call().set_value(x).perform();
+    supported_presets: [COMFORT, ECO, NONE]
+    preset_lambda: |-
+      int st = id(dd_zone3_status_raw) & 0xFF;
+      if (st & 0x40) return std::string("COMFORT");
+      if (st & 0x80) return std::string("ECO");
+      if (st & 0x04) return std::string("NONE");
+      return {};
+    set_preset_action:
+      - lambda: |-
+          bool cool = (id(operating_mode_reported) == 2);
+          int raw;
+          if (x == "COMFORT") raw = cool ? id(dominus_comfort_cool_z3_raw) : id(dominus_comfort_heat_z3_raw);
+          else if (x == "ECO") raw = cool ? id(dominus_eco_cool_z3_raw) : id(dominus_eco_heat_z3_raw);
+          else return;
+          id(zone3_setpoint_number).make_call().set_value(raw / 10.0f).perform();
 
 interval:
-  # v118 last-writer-wins delta-sync (replaces v65 unconditional raw=thermostat).
-  # First tick: init the thermostats from the saved setpoint + store thermo_last = raw.
-  # Next ticks, per setpoint:
-  #   1) target != thermo_last  -> user MOVED the thermostat -> raw = target (thermostat wins), publish slider.
-  #   2) else if raw != target  -> raw changed by slider/bus -> best-effort sync the thermostat
-  #      (make_call; retried each tick until target catches up). raw is NOT reverted.
-  # Key: the loop no longer forces raw=thermostat unconditionally -> a slider/Dominus change holds on the
-  # bus even if make_call does not visually update the thermostat.
-  - interval: 1s
-    then:
-      - lambda: |-
-          static bool first = true;
-          if (first) {
-            first = false;
-            id(co_thermostat).make_call().set_target_temperature_low(id(zone1_setpoint_raw) / 10.0f).set_target_temperature(id(zone1_setpoint_raw) / 10.0f).perform();
-            id(cwu_thermostat).make_call().set_target_temperature_low(id(cwu_setpoint_raw) / 10.0f).set_target_temperature(id(cwu_setpoint_raw) / 10.0f).perform();
-            id(co_thermostat_2).make_call().set_target_temperature_low(id(zone2_setpoint_raw) / 10.0f).set_target_temperature(id(zone2_setpoint_raw) / 10.0f).perform();  // v96
-            id(co_thermostat_3).make_call().set_target_temperature_low(id(zone3_setpoint_raw) / 10.0f).set_target_temperature(id(zone3_setpoint_raw) / 10.0f).perform();  // v96
-            id(zone1_thermo_last) = id(zone1_setpoint_raw);
-            id(cwu_thermo_last)   = id(cwu_setpoint_raw);
-            id(zone2_thermo_last) = id(zone2_setpoint_raw);
-            id(zone3_thermo_last) = id(zone3_setpoint_raw);
-            return;
-          }
-          // --- Zone 1 (CH) ---
-          {
-            int ti = (int) roundf(id(co_thermostat).target_temperature_low * 10.0f);
-            if (ti != id(zone1_thermo_last)) {
-              id(zone1_setpoint_raw) = ti; id(zone1_setpoint_number).publish_state(ti / 10.0f); id(zone1_thermo_last) = ti;
-            } else if (id(zone1_setpoint_raw) != ti) {
-              id(co_thermostat).make_call().set_target_temperature_low(id(zone1_setpoint_raw) / 10.0f).set_target_temperature(id(zone1_setpoint_raw) / 10.0f).perform();
-            }
-          }
-          // --- DHW ---
-          {
-            int ti = (int) roundf(id(cwu_thermostat).target_temperature_low * 10.0f);
-            if (ti != id(cwu_thermo_last)) {
-              id(cwu_setpoint_raw) = ti; id(cwu_setpoint_number).publish_state(ti / 10.0f); id(cwu_thermo_last) = ti;
-            } else if (id(cwu_setpoint_raw) != ti) {
-              id(cwu_thermostat).make_call().set_target_temperature_low(id(cwu_setpoint_raw) / 10.0f).set_target_temperature(id(cwu_setpoint_raw) / 10.0f).perform();
-            }
-          }
-          // --- Zone 2 (CH) ---
-          {
-            int ti = (int) roundf(id(co_thermostat_2).target_temperature_low * 10.0f);
-            if (ti != id(zone2_thermo_last)) {
-              id(zone2_setpoint_raw) = ti; id(zone2_setpoint_number).publish_state(ti / 10.0f); id(zone2_thermo_last) = ti;
-            } else if (id(zone2_setpoint_raw) != ti) {
-              id(co_thermostat_2).make_call().set_target_temperature_low(id(zone2_setpoint_raw) / 10.0f).set_target_temperature(id(zone2_setpoint_raw) / 10.0f).perform();
-            }
-          }
-          // --- Zone 3 (CH) ---
-          {
-            int ti = (int) roundf(id(co_thermostat_3).target_temperature_low * 10.0f);
-            if (ti != id(zone3_thermo_last)) {
-              id(zone3_setpoint_raw) = ti; id(zone3_setpoint_number).publish_state(ti / 10.0f); id(zone3_thermo_last) = ti;
-            } else if (id(zone3_setpoint_raw) != ti) {
-              id(co_thermostat_3).make_call().set_target_temperature_low(id(zone3_setpoint_raw) / 10.0f).set_target_temperature(id(zone3_setpoint_raw) / 10.0f).perform();
-            }
-          }
-
   - interval: 10ms
     then:
       - lambda: |-
@@ -4658,7 +4651,7 @@ interval:
             if (reg == REG_ZONE1_SETPOINT) {
               if (addr == 0x2A) { if (value != id(zone2_setpoint_last_bus)) { id(zone2_setpoint_raw) = value; id(zone2_setpoint_number).publish_state(value / 10.0f); } id(zone2_setpoint_last_bus) = value; }  // v118 last-writer-wins
               else if (addr == 0x2B) { if (value != id(zone3_setpoint_last_bus)) { id(zone3_setpoint_raw) = value; id(zone3_setpoint_number).publish_state(value / 10.0f); } id(zone3_setpoint_last_bus) = value; }  // v118 last-writer-wins
-              else { if (value != id(zone1_setpoint_last_bus)) { id(zone1_setpoint_raw) = value; id(zone1_setpoint_number).publish_state(value / 10.0f); id(co_thermostat).make_call().set_target_temperature_low(value / 10.0f).set_target_temperature(value / 10.0f).perform(); } id(zone1_setpoint_last_bus) = value; }  // v117 last-writer-wins
+              else { if (value != id(zone1_setpoint_last_bus)) { id(zone1_setpoint_raw) = value; id(zone1_setpoint_number).publish_state(value / 10.0f); } id(zone1_setpoint_last_bus) = value; }  // v117 last-writer-wins
               ESP_LOGI("dd_value", "%s addr=0x%02X setpoint PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -4682,7 +4675,6 @@ interval:
               if (cwu_from_device && value != id(cwu_setpoint_last_bus)) {  // v117 last-writer-wins
                 id(cwu_setpoint_raw) = value;
                 id(cwu_setpoint_number).publish_state(value / 10.0f);
-                id(cwu_thermostat).make_call().set_target_temperature_low(value / 10.0f).set_target_temperature(value / 10.0f).perform();
               }
               if (cwu_from_device) id(cwu_setpoint_last_bus) = value;
               ESP_LOGI("dd_value", "%s CWU setpoint/copy PDU %u = %d / %.1f°C", source, reg, value, value / 10.0f);

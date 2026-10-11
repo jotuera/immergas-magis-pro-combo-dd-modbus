@@ -4,3 +4,6 @@ secrets.yaml
 # ESPHome build artifacts
 .esphome/
 *.bin
+
+# Python bytecode (external components)
+__pycache__/
