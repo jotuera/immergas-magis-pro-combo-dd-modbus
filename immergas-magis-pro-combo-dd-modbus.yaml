@@ -4799,6 +4799,60 @@ interval:
             if (addr == 0x2A && reg == 3042) { id(pdu_2a_version_raw) = value; id(sensor_panel2_version).publish_state(value / 100.0f); return; }
             if (addr == 0x2B && reg == 3042) { id(pdu_2b_version_raw) = value; id(sensor_panel3_version).publish_state(value / 100.0f); return; }
 
+            // FIX chrono: the boiler propagates schedule changes made on another device (e.g. the physical panel)
+            // by WRITING them to 0x33. Before, these writes were dropped: the emulator kept serving the old HA values
+            // and the boiler reverted the panel. Last-writer-wins per register (like the v117 setpoints): adopt a bus
+            // value only when it differs from the last one seen on the bus, so periodic re-writes of an old value
+            // can't undo a fresh HA change. Hi byte bits 0xE0 = "modified" flag set by the panel -> masked.
+            if (addr == 0x33 && (func == 0x06 || func == 0x10) && reg >= 2310 && reg <= 2496) {
+              static int chrono_last_bus[187];
+              static bool chrono_init = false;
+              if (!chrono_init) { for (auto &v : chrono_last_bus) v = INT32_MIN; chrono_init = true; }
+              int &last = chrono_last_bus[reg - 2310];
+              if (value == last) return;
+              last = value;
+
+              if (reg <= 2347 && (reg % 10) <= 7) {
+                datetime::TimeEntity *cal[4][8] = {
+                  {id(dt_cal1_f1_on), id(dt_cal1_f1_off), id(dt_cal1_f2_on), id(dt_cal1_f2_off), id(dt_cal1_f3_on), id(dt_cal1_f3_off), id(dt_cal1_f4_on), id(dt_cal1_f4_off)},
+                  {id(dt_cal2_f1_on), id(dt_cal2_f1_off), id(dt_cal2_f2_on), id(dt_cal2_f2_off), id(dt_cal2_f3_on), id(dt_cal2_f3_off), id(dt_cal2_f4_on), id(dt_cal2_f4_off)},
+                  {id(dt_cal3_f1_on), id(dt_cal3_f1_off), id(dt_cal3_f2_on), id(dt_cal3_f2_off), id(dt_cal3_f3_on), id(dt_cal3_f3_off), id(dt_cal3_f4_on), id(dt_cal3_f4_off)},
+                  {id(dt_cal4_f1_on), id(dt_cal4_f1_off), id(dt_cal4_f2_on), id(dt_cal4_f2_off), id(dt_cal4_f3_on), id(dt_cal4_f3_off), id(dt_cal4_f4_on), id(dt_cal4_f4_off)}
+                };
+                uint8_t hh = ((uint16_t) value >> 8) & 0x1F;
+                uint8_t mm = (uint16_t) value & 0xFF;
+                if (hh > 23 || mm > 59) return;
+                datetime::TimeEntity *t = cal[(reg - 2310) / 10][(reg - 2310) % 10];
+                if (t->hour != hh || t->minute != mm) {
+                  auto call = t->make_call();
+                  call.set_hour(hh);
+                  call.set_minute(mm);
+                  call.set_second(0);
+                  call.perform();
+                  ESP_LOGW("dd_chrono", "BUS->HA PDU %u (cal%d range%d %s) = %02u:%02u", reg,
+                           (reg - 2310) / 10 + 1, ((reg - 2310) % 10) / 2 + 1, ((reg % 2) == 0) ? "ON" : "OFF", hh, mm);
+                }
+                return;
+              }
+
+              // Day -> calendar assignments: Zone 1 (2410-2416), Zone 2 (2420-2426), Zone 3 (2430-2436), DHW (2490-2496).
+              select::Select *days = nullptr;
+              if (reg >= 2410 && reg <= 2416) { select::Select *s[7] = {id(sel_weekday_1), id(sel_weekday_2), id(sel_weekday_3), id(sel_weekday_4), id(sel_weekday_5), id(sel_weekday_6), id(sel_weekday_7)}; days = s[reg - 2410]; }
+              else if (reg >= 2420 && reg <= 2426) { select::Select *s[7] = {id(sel_weekday_z2_1), id(sel_weekday_z2_2), id(sel_weekday_z2_3), id(sel_weekday_z2_4), id(sel_weekday_z2_5), id(sel_weekday_z2_6), id(sel_weekday_z2_7)}; days = s[reg - 2420]; }
+              else if (reg >= 2430 && reg <= 2436) { select::Select *s[7] = {id(sel_weekday_z3_1), id(sel_weekday_z3_2), id(sel_weekday_z3_3), id(sel_weekday_z3_4), id(sel_weekday_z3_5), id(sel_weekday_z3_6), id(sel_weekday_z3_7)}; days = s[reg - 2430]; }
+              else if (reg >= 2490 && reg <= 2496) { select::Select *s[7] = {id(sel_dhw_weekday_1), id(sel_dhw_weekday_2), id(sel_dhw_weekday_3), id(sel_dhw_weekday_4), id(sel_dhw_weekday_5), id(sel_dhw_weekday_6), id(sel_dhw_weekday_7)}; days = s[reg - 2490]; }
+              if (days != nullptr && value >= 1 && value <= 4) {
+                auto cur = days->active_index();
+                if (!cur.has_value() || (int) cur.value() != value - 1) {
+                  auto call = days->make_call();
+                  call.set_index(value - 1);
+                  call.perform();
+                  ESP_LOGW("dd_chrono", "BUS->HA PDU %u (day -> calendar) = Calendar %d", reg, value);
+                }
+              }
+              return;
+            }
+
             if (is_known_pdu(addr, reg)) {
               ESP_LOGD("dd_known", "%s known addr=0x%02X PDU %u = %d / 0x%04X", source, addr, reg, value, (uint16_t) value);
               return;
@@ -4899,8 +4953,16 @@ interval:
               }
               send_emu33_write10_ack(start, count);
               emu33_write10_ack_pre_sent = true;
+              // FIX: the ACK is already queued to the UART, so the payload can be processed now. Before, this fast
+              // path dropped every FC16 write to 0x33 (2015-2017 setpoint/offset, 2214-2218, schedules 2310-2496,
+              // ...): the boiler propagates changes made on another device (e.g. the physical panel) by writing them
+              // to the Dominus, the emulator kept serving the old values and the boiler reverted the change.
+              for (int i = 0; i < values && (8 + i * 2) < (int) len - 2; i++) {
+                uint16_t uv = ((uint16_t) frame[7 + i * 2] << 8) | frame[8 + i * 2];
+                handle_pdu(0x33, 0x10, start + i, (int16_t) uv, "WRITE10");
+              }
               // v56: KEY - like the 0x29 fast-path we continue IMMEDIATELY. The 0x29 path worked,
-              // tor 0x33 (v52-v55) NIE - jedyna strukturalna roznica to brak tego continue:
+              // the 0x33 path (v52-v55) did NOT - the only structural difference was this missing continue:
               // 0x33 went on through heavy processing of the same frame in the RX loop, which
               // apparently blocked the actual transmission. Here we exit right after the ACK.
               continue;
