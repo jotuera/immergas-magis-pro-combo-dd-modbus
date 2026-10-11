@@ -125,8 +125,18 @@ ota:
   - platform: esphome
 
 logger:
-  level: DEBUG
+  # INFO in normal use (DEBUG logs every bus frame); switch to DEBUG only for bus sniffing sessions.
+  level: INFO
   baud_rate: 0
+
+# Runtime diagnostics (reset reason, loop time, free heap): tell a reboot or a blocked loop from an entity glitch.
+debug:
+  update_interval: 10s
+
+# HA time, used only for the drift of the boiler clock (PDU 2300).
+time:
+  - platform: homeassistant
+    id: ha_time
 
 # v111: lokalny panel WWW (fallback gdy HA niedostepny; local:true = assety wbudowane, bez internetu).
 web_server:
@@ -398,6 +408,12 @@ globals:
     restore_value: no
     initial_value: '0'
 
+  # CRC failures seen by the RX parser since boot (relative metric: the parser resyncs one byte at a time,
+  # so a corrupted frame can count more than once).
+  - id: dd_crc_bad_count
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
   - id: dd_last_crc_bad_ms
     type: uint32_t
     restore_value: no
@@ -2469,6 +2485,109 @@ sensor:
       return id(dd_sniff_changes);
 
   # v1.2.0 boiler -> panel block (0x29) = zone-panel "Information" menu 1:1 (all x0.1 C, published from handle_pdu)
+  # Device and bus health. Uptime drop = reboot; Loop time spikes = main loop blocked; CRC/TX counters: watch them
+  # after any change to the RS485 path.
+  - platform: uptime
+    name: "Immergas - Uptime"
+    entity_category: diagnostic
+    update_interval: 10s
+  - platform: wifi_signal
+    name: "Immergas - WiFi signal"
+    entity_category: diagnostic
+    update_interval: 30s
+  - platform: debug
+    loop_time:
+      name: "Immergas - Loop time"
+      entity_category: diagnostic
+    free:
+      name: "Immergas - Free heap"
+      entity_category: diagnostic
+  - platform: template
+    name: "Immergas - RS485 CRC errors"
+    id: dd_crc_bad_sensor
+    icon: mdi:alert-octagon-outline
+    entity_category: diagnostic
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: |-
+      return (float) id(dd_crc_bad_count);
+  - platform: template
+    name: "Immergas - Dominus TX frames"
+    id: dd_emu33_tx_sensor
+    icon: mdi:upload-network-outline
+    entity_category: diagnostic
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: |-
+      return (float) id(dd_emu_33_ack_count);
+  # Boiler clock (PDU 2300: bits 15-13 weekday 1 = Mon .. 7 = Sun, 12-8 hour, 7-0 minute) minus HA local time,
+  # in minutes (+ ahead / - behind). The zone schedules run on the boiler clock. Resolution 1 min.
+  - platform: template
+    name: "Immergas - Boiler clock drift"
+    id: controller_clock_drift
+    icon: mdi:clock-alert-outline
+    entity_category: diagnostic
+    unit_of_measurement: "min"
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: |-
+      uint16_t r = (uint16_t) id(pdu_29_2300_raw);
+      auto now = id(ha_time).now();
+      int wd = (r >> 13) & 0x07, hh = (r >> 8) & 0x1F, mm = r & 0xFF;
+      if (r == 0 || !now.is_valid() || wd < 1 || hh > 23 || mm > 59) return NAN;
+      int boiler = (wd - 1) * 1440 + hh * 60 + mm;                                    // minutes since Monday 00:00
+      int local = ((now.day_of_week + 5) % 7) * 1440 + now.hour * 60 + now.minute;  // ESPTime: 1 = Sunday
+      int d = boiler - local;
+      if (d > 5040) d -= 10080;
+      if (d < -5040) d += 10080;
+      return (float) d;
+  # Space-heating/cooling flow and return = heat-pump water probes TW2/TW1 (0x1E W21/W20), published only while
+  # they measure the system circuit: winter or cooling mode, zone request (2010 bit3), no DHW request (2001 bit0,
+  # 3-way valve on the cylinder) and compressor running. Otherwise they measure the DHW circuit or stagnant water
+  # -> unknown (gap in the HA graph). TW2 verified against the boiler display D20 (Magis Combo V2, fw 5.03).
+  - platform: template
+    name: "Immergas - System flow temperature"
+    id: system_flow_temp
+    icon: mdi:thermometer-chevron-up
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      int m = id(operating_mode_reported);
+      bool space = (m == 2 || m == 3) && (id(dd_zone1_status_raw) & 0x08) != 0;
+      if (!space || id(piec_zadanie_cwu_oczek).state || !id(pc_sprezarka_pracuje).state) return NAN;
+      return id(sniff_1e_w_21).state;
+  - platform: template
+    name: "Immergas - System return temperature"
+    id: system_return_temp
+    icon: mdi:thermometer-chevron-down
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      int m = id(operating_mode_reported);
+      bool space = (m == 2 || m == 3) && (id(dd_zone1_status_raw) & 0x08) != 0;
+      if (!space || id(piec_zadanie_cwu_oczek).state || !id(pc_sprezarka_pracuje).state) return NAN;
+      return id(sniff_1e_w_20).state;
+  - platform: template
+    name: "Immergas - System delta T"
+    id: system_delta_t
+    icon: mdi:delta
+    state_class: measurement
+    unit_of_measurement: "K"
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      int m = id(operating_mode_reported);
+      bool space = (m == 2 || m == 3) && (id(dd_zone1_status_raw) & 0x08) != 0;
+      if (!space || id(piec_zadanie_cwu_oczek).state || !id(pc_sprezarka_pracuje).state) return NAN;
+      return id(sniff_1e_w_21).state - id(sniff_1e_w_20).state;  // > 0 heating, < 0 cooling
   # 3003 = heating-curve flow setpoint (0 without demand)
   - platform: template
     name: "Immergas - D04 Calculated flow setpoint"
@@ -3021,6 +3140,10 @@ sensor:
     update_interval: 30s
 
 text_sensor:
+  - platform: debug
+    reset_reason:
+      name: "Immergas - Reset reason"
+      entity_category: diagnostic
 
   # v1.2.0
   - platform: template
@@ -3194,6 +3317,13 @@ text_sensor:
 # v66: online/offline status of emulated devices. "Online" = the boiler READS that address (03/04)
 # within the last 30 s = it accepted us. When it stops reading (or emulation is off) -> offline.
 binary_sensor:
+  # Zone 1 heating/cooling request = PDU 2010 bit3 (verified: 2010 = 12 with heating active).
+  - platform: template
+    name: "Immergas - Zone 1 heating request"
+    id: bs_zone1_heat_request
+    device_class: heat
+    lambda: |-
+      return (id(dd_zone1_status_raw) & 0x08) != 0;
   # v1.3.0: 0x29 W 2001 status flags (bit 0 = DHW request pending, bit 2 = active boiler fault/anomaly)
   - platform: template
     name: "Immergas - D09 DHW request pending"
@@ -4756,6 +4886,7 @@ interval:
 
             if (!crc_ok(frame)) {
               id(dd_last_crc_bad_ms) = millis();
+              id(dd_crc_bad_count)++;
               rx.erase(rx.begin());
               continue;
             }
