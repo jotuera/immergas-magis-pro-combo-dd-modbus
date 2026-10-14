@@ -22,7 +22,7 @@ Verified on **three buses** (D+/D-, T-/T+, NASA) at standby and during a forced 
 | Reg | Dir | Meaning | Code | NASA / T-T+ | Scale | Confidence |
 |---|---|---|---|---|---|---|
 | 0 | W | **Heat-pump run request** (0/1) | — | NASA Capacity Request | bit | CONFIRMED |
-| 1 | R/W | **Water target for the HP.** R1 = stable target (= D04 on demand, **5.0 °C idle**). W1 is unusual: every cycle (~2 s) it alternates **0 / 50** (func 06 request/echo with different values); the real target is written only when it changes → use R1/I10 | — | NASA Water Outlet Target | ×0.1 °C | CONFIRMED (R1) |
+| 1 | R/W | **Water target for the HP.** R1 = stable target (= D04 on demand, **5.0 °C idle**). W1 is unusual: every cycle the boiler sends FC06 reg 1 = **0** and the MIM replies with a non-echo **50** (`1E 06 00 01 00 00` → `1E 06 00 01 00 32`), so a sniffer sees "0 / 50"; the real target is written only when it changes → use R1/I10. **DHW by heat pump**: W1 = **650** (65.0 °C) together with 2001 bit 0 and W0 = 1; I17 (discharge target) rises to 80 °C | — | NASA Water Outlet Target | ×0.1 °C | CONFIRMED (R1) |
 | 2–6 | R | R2/R3/R5/R6 = 0, R4 = 1 (constant) | — | — | — | ? |
 | 15–18 | R | constant 5 / 30 / 10 / 30 | T21–T24 (screed drying)? | — | — | CAND. |
 | 3 | I | **Compressor discharge temperature** | **D73** | NASA 820A, T-T+ 4554 | ×0.1 °C | CONFIRMED |
@@ -61,7 +61,7 @@ Verified on **three buses** (D+/D-, T-/T+, NASA) at standby and during a forced 
 |---|---|---|---|---|
 | 2000 | Operating mode (0 standby, 1 summer DHW, 2 cooling, 3 winter CH+DHW) | — | enum | CONFIRMED |
 | 2001 | **Status flags** (bitfield): **bit 3 = heat-pump module present** (clears with A11 = OFF; always 1 in normal operation); **bit 0 (8→9) = DHW request pending** — set ~9 min before every DHW cycle, cleared when the 3-way valve switches to DHW (15/15 cases); **bit 2 (8→12) = boiler anomaly active (2100 ≠ 0)** — matches to the second both E193 "Device in test mode" (service menu M) and E121 "Zone 1 panel missing". Dominus: `mb-water-request` | bit 0 = D09 (DHW request) | bitfield | CONFIRMED |
-| 2010 | Zone status / phase | — | bitfield | CONFIRMED |
+| 2010 | Zone status / phase (bit 2 manual, bit 3 heat request, bit 6 comfort, bit 7 economy; **value 1 = bit 0 during air purge U50**, together with anomaly 139 "air purge in progress", 2000 → 0 and 2101 = 2) | — | bitfield | CONFIRMED |
 | 2015 / 2016 / 2017 | Zone setpoint / max / offset | — | ×0.1 °C | CONFIRMED |
 | **2090** | **Time-program state** (boiler reply to 2294, ~5 s later): **4 = manual (bit 2), 64 = auto / comfort phase (bit 6), 128 = auto / economy phase (bit 7)** (64 → 128 seen 3 s after the boiler clock was moved past the end of a comfort window). Whether it tracks the Zone 1 CH or the DHW program is still open | — | bitfield | CONFIRMED (link), CAND. (scope) |
 | 2100 | Fault code (0 = none, e.g. 142 = Dominus missing) | — | enum | CONFIRMED |
@@ -80,7 +80,7 @@ Verified on **three buses** (D+/D-, T-/T+, NASA) at standby and during a forced 
 | **3015** | **Active DHW setpoint** used by the boiler (60 during anti-legionella) | D05 | ×0.1 °C | CONFIRMED |
 | 3016 | DHW cylinder temperature | D03 | ×0.1 °C | CONFIRMED |
 | 3031 | Board firmware version (600 = 6.00) | D91 | ×0.01 | CONFIRMED |
-| **6102** | **A31 "Zone 1 room thermostat"** passed to the panel: **RPT = 0, RP = 2** (RT probably 1). Changing A31 RPT → RP switched 6102 0 → 2, and back RP → RPT 2 → 0 (both directions verified) | **A31** | enum | CONFIRMED (RT = CAND.) |
+| **6102** | **A31 "Zone 1 room thermostat"** passed to the panel: **RPT = 0, RP = 2**; setting RT left 6102 at 0, so RT most likely = 0 like RPT (2 only when the panel is the sole thermostat). Changing A31 RPT → RP switched 6102 0 → 2, and back RP → RPT 2 → 0 (both directions verified) | **A31** | enum | CONFIRMED (RT = CAND.) |
 | **6150** | **Heat-pump module present** (A11 ≠ OFF): 1 = yes, 0 = none. With A11 = OFF it drops to 0, 2001 bit 3 clears, 3002 goes to 0 (outdoor temperature comes from the outdoor unit) and the boiler stops polling 0x1E | **A11** | flag | CONFIRMED |
 
 ### Panel → boiler (R)
@@ -117,7 +117,8 @@ With R02 = −12, R03 = 20, R05 = 24, R04 = 35 and T_out 15.5 °C: U03 = 0 → *
 | 2000 | R/W | Operating mode | CONFIRMED |
 | 2001–2002 | W | Dominus presence probe [12, 0] / status flags | CONFIRMED |
 | 2010 / 2011 | W | Zone status / room temperature (32767 = none) | CONFIRMED |
-| 2012 | W | constant 0 | ? |
+| 2012 | W | constant 0 (unchanged by Dominus disconnect and A30 = OFF) | ? |
+| (behaviour) | — | **Dominus unplugged**: anomaly **142** after ~3 min (2001 bit 2, 2100 = 142, 2101 = 2). **Re-plugged**: the Dominus first answers 2015–2017 = 0 and the boiler immediately **writes its stored configuration back** (2095, 2210–2211, schedule 2310–2347, 2410–2416). **A30 = OFF** (Dominus enable): the boiler stops polling 0x33 without any anomaly | CONFIRMED |
 | 2015–2017 | R/W | Zone 1 setpoint / max / offset (2017 = U03) | CONFIRMED |
 | 2020–2025 / 2030–2035 / 2040–2045 | R | Status, temperature and setpoint of zones 2 / 3 / 4 (Dominus map) | CONFIRMED |
 | 2095 | R/W | DHW setpoint | CONFIRMED |
