@@ -45,6 +45,7 @@ Verified on **three buses** (D+/D-, T-/T+, NASA) at standby and during a forced 
 | 37 | I | constant 0 | — | — | — | ? |
 | 38 | I | **Flag: fan running** (drops ~1 min after the compressor) | — | — | bit | CONFIRMED |
 | 40 | I | **Flag: request accepted** (together with W0) | — | — | bit | CONFIRMED |
+| 2 | W (+ R 2, I 12 = MIM echo) | **Night function (U11)** — compressor limitation during the U12–U13 window: **30 = on, 0 = off**. Verified both ways (U11 ON → 30 within ~1 s on W2/I12/R2; U11 OFF → 0). **30 = compressor capacity limit in %** (30 % × 64 Hz ≈ 19 Hz). Effect on the Samsung NASA F1/F2 bus: **0x8239 (outdoor-unit upper Hz limit) 64 → 19** about 6 min after compressor start, back to 64 ~40 s after W2 = 0; on D+/D- the compressor frequency (I11) drops to 18 Hz and recovers accordingly. **Sent only inside the U12–U13 window** (U11 ON with a 22–23 window: W2 = 0 until 22:00:11, then 30; an already running compressor dropped 26 → 18 Hz within a minute), so W2/I12 ≠ 0 means "night function active now" | **U11** | % | value | CONFIRMED |
 | 41 / 42 | I | constant 0 / 1 | D78? | — | — | CAND. |
 | 44–46 | I | constant 0 | — | — | — | ? |
 | 5 | W | constant 0 (boiler command) | — | — | — | ? |
@@ -59,7 +60,7 @@ Verified on **three buses** (D+/D-, T-/T+, NASA) at standby and during a forced 
 | Reg | Meaning | Code | Scale | Confidence |
 |---|---|---|---|---|
 | 2000 | Operating mode (0 standby, 1 summer DHW, 2 cooling, 3 winter CH+DHW) | — | enum | CONFIRMED |
-| 2001 | **Status flags** (bitfield): **bit 3 = always 1**; **bit 0 (8→9) = DHW request pending** — set ~9 min before every DHW cycle, cleared when the 3-way valve switches to DHW (15/15 cases); **bit 2 (8→12) = boiler anomaly active (2100 ≠ 0)** — matches to the second both E193 "Device in test mode" (service menu M) and E121 "Zone 1 panel missing". Dominus: `mb-water-request` | bit 0 = D09 (DHW request) | bitfield | CONFIRMED |
+| 2001 | **Status flags** (bitfield): **bit 3 = heat-pump module present** (clears with A11 = OFF; always 1 in normal operation); **bit 0 (8→9) = DHW request pending** — set ~9 min before every DHW cycle, cleared when the 3-way valve switches to DHW (15/15 cases); **bit 2 (8→12) = boiler anomaly active (2100 ≠ 0)** — matches to the second both E193 "Device in test mode" (service menu M) and E121 "Zone 1 panel missing". Dominus: `mb-water-request` | bit 0 = D09 (DHW request) | bitfield | CONFIRMED |
 | 2010 | Zone status / phase | — | bitfield | CONFIRMED |
 | 2015 / 2016 / 2017 | Zone setpoint / max / offset | — | ×0.1 °C | CONFIRMED |
 | **2090** | **Time-program state** (boiler reply to 2294, ~5 s later): **4 = manual (bit 2), 64 = auto / comfort phase (bit 6), 128 = auto / economy phase (bit 7)** (64 → 128 seen 3 s after the boiler clock was moved past the end of a comfort window). Whether it tracks the Zone 1 CH or the DHW program is still open | — | bitfield | CONFIRMED (link), CAND. (scope) |
@@ -80,7 +81,7 @@ Verified on **three buses** (D+/D-, T-/T+, NASA) at standby and during a forced 
 | 3016 | DHW cylinder temperature | D03 | ×0.1 °C | CONFIRMED |
 | 3031 | Board firmware version (600 = 6.00) | D91 | ×0.01 | CONFIRMED |
 | **6102** | **A31 "Zone 1 room thermostat"** passed to the panel: **RPT = 0, RP = 2** (RT probably 1). Changing A31 RPT → RP switched 6102 0 → 2, and back RP → RPT 2 → 0 (both directions verified) | **A31** | enum | CONFIRMED (RT = CAND.) |
-| 6150 | constant 1 | — | — | ? |
+| **6150** | **Heat-pump module present** (A11 ≠ OFF): 1 = yes, 0 = none. With A11 = OFF it drops to 0, 2001 bit 3 clears, 3002 goes to 0 (outdoor temperature comes from the outdoor unit) and the boiler stops polling 0x1E | **A11** | flag | CONFIRMED |
 
 ### Panel → boiler (R)
 | Reg | Meaning | Confidence |
@@ -141,9 +142,9 @@ Same register set as 0x29 (2005/2006, 2015–2017, 2210–2216, …), per-zone v
 Parameter **P15** (anti-legionella enable; P13 duration, P16 hour, P17 day) is **not transmitted on D+/D-** — comparing sniffer baselines with P15 = ON and P15 = OFF showed no constant register change besides the DHW setpoint. Only the **effect** is visible: the boiler's active DHW setpoint in **3015** goes up during the cycle. Up to v1.1.0 the emulator adopted 3015 as a user setpoint and fed it back as the panel, leaving the setpoint stuck at 60 °C — fixed in v1.2.0.
 
 ## Still unknown — help welcome
-- 0x1E: I12, I15, I20, I37, I44–46, W5 (always 0), R2–6, R15–18; flags I18/21/41/42 — **D78** candidates (needs cooling or defrost data).
+- 0x1E: I15, I20, I37, I44–46, W5 (always 0), R2–6, R15–18; flags I18/21/41/42 — **D78** candidates (needs cooling or defrost data).
 - **Registers the boiler READS from panel 0x29**: 2000, 2005–2006, 2015–2017, 2095, 2103, 2210–2211, 2214–2216, 2218–2219, 2290–2292, 2294, 2310–2347, 2410–2416, 2490–2496, 2707, 3042, 6105, 6107. Only these can be controlled by an emulated panel; **6102 (A31) is never read**, so A31 cannot be set over the bus.
-- 0x29: 2103, 6150 (2001: bits 0 and 2 decoded, bit 3 always 1; 6102 = A31).
+- 0x29: 2103 (2001: bits 0, 2 and 3 decoded; 6102 = A31, 6150 = heat-pump module present).
 - 0x33: 2012.
 
 The **bus sniffer** switch in the firmware logs every register change (log tag `sniff`) — a capture during cooling, defrost or heat-pump DHW would help close the remaining gaps.
