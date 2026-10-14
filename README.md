@@ -6,6 +6,13 @@ The boiler is the Modbus **master**; this device is a **slave** that answers as 
 
 > ⚠️ **Tested only on the Magis Combo V2 (`MPROCOMBOV2`).** The Dominus app supports many Immergas engines (Zeus, Star, VictrixMaior, …) with different register maps — this project targets **Magis Combo only**. Other models may partially work but are untested. Contributions welcome.
 
+## What's new in v1.3.1
+
+- **Night function (boiler parameter U11)** decoded across three buses. Inside the U12–U13 window the boiler writes a compressor capacity limit in % to the outdoor-unit interface board (`0x1E` reg `2`, **30** = night function; the MIM echoes it in input reg `12`). The Samsung outdoor unit then caps the compressor at ~19 Hz instead of 64 Hz (NASA `0x8239`).
+- New read-only entities: **HP Night function (U11)** and **HP Compressor capacity limit** (%, 100 = no limit). They show when the limit is actually active, not just whether U11 is enabled.
+- The night function **cannot be switched from Home Assistant**: only the boiler writes it, and this device never transmits to `0x1E`. Set U11 / U12 / U13 in the boiler menu.
+- `Boiler firmware version` renamed to **`D91 Boiler firmware version`** (same value as D91 on the T-/T+ BMS bus).
+
 ## What's new in v1.3.0
 
 Zone-panel settings decoded by clicking through every menu of a physical zone panel while sniffing the bus. The boiler **reads** these from panel `0x29`, so an emulated panel can now set them from Home Assistant (until now they were hard-coded):
@@ -44,6 +51,7 @@ See [REGISTER_MAP.md](REGISTER_MAP.md) for the full list of registers the boiler
 - **Controls**: operating mode, zone CH setpoint, heating offset (U03/U04/U16), Comfort/Eco heat & cool setpoints, set-flow, humidity setting (U07/U08/U18), DHW setpoint.
 - **Weekly schedules (chrono)**: 4 shared time-profile calendars (`Calendar 1–4`) + independent day→calendar assignment per zone and for DHW.
 - **Monitors**: boiler fault code + **114 fault descriptions in official Immergas English** (extracted from the Dominus app labels), per-zone phase (Comfort/Eco), connection status of each device, firmware versions.
+- **Night function** (v1.3.1): U11 active flag and compressor capacity limit (%) from the outdoor-unit interface board (read-only).
 - **Zone-panel settings** (v1.3.0): time programs Manual/Auto, room-probe modulation, dew-point correction (controllable); A31 room thermostat, time-program state, DHW-request-pending and fault flags (read-only).
 - **Heat pump & generators** (v1.2.0): compressor Hz / current / temperatures, fan, EEV, run flags and stage from the outdoor-unit interface board; heat-pump and gas-boiler flow/return temperatures; calculated flow setpoint (D04); active DHW setpoint; boiler clock.
 - **Local web UI** (ESPHome web server, password-protected) as a fallback independent of Home Assistant.

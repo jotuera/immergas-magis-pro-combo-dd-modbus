@@ -6,12 +6,18 @@
 # setpoints, weekly schedules, operating mode and boiler faults. See README.md for wiring, the register
 # map and setup.
 #
-# Project : jotuera.immergas-magis-pro-combo-dd-modbus  |  v1.3.0
+# Project : jotuera.immergas-magis-pro-combo-dd-modbus  |  v1.3.1
 # Repo    : https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus
 # License : MIT (c) 2026 JoTu
 # Tested  : Magis Combo V2 (MPROCOMBOV2). Other Immergas engines use different register maps - untested.
 #
 # Changelog:
+#   v1.3.1 - NEW: night function (boiler parameter U11). Inside the U12-U13 window the boiler writes a compressor
+#            capacity limit in % to the outdoor-unit interface board (0x1E reg 2, 30 = night function; the MIM echoes
+#            it in input reg 12). Read-only entities: "HP Night function (U11)" and "HP Compressor capacity limit" (%,
+#            100 = no limit). On the Samsung side the outdoor unit caps the compressor (~19 Hz instead of 64 Hz).
+#            The night function cannot be switched from HA (only the boiler writes it). "Boiler firmware version"
+#            renamed to "D91 Boiler firmware version" (same value as D91 on the T-/T+ BMS bus).
 #   v1.3.0 - NEW: zone-panel settings the boiler READS from panel 0x29 are now controllable from HA (they were
 #            hard-coded): "Time programs Zone 1" (2294, Manual/Auto - Auto makes the boiler follow the CH weekly
 #            schedule, comfort/economy), "Room probe modulation" (6105, NO/YES), "Dew point correction" (6107).
@@ -73,7 +79,7 @@ substitutions:
   # v110: project metadata (author / GitHub repo). After publishing, set the correct repo URL.
   author: "JoTu"
   github_url: "https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus"
-  project_version: "1.3.0"
+  project_version: "1.3.1"
 
 esphome:
   name: immergas-dd-atom
@@ -2690,6 +2696,15 @@ sensor:
     state_class: measurement
     accuracy_decimals: 0
     update_interval: never
+  # v1.3.1: compressor capacity limit in % (0x1E input 12 = MIM echo of the boiler write to reg 2; 0 -> 100 %)
+  - platform: template
+    name: "Immergas - HP Compressor capacity limit"
+    id: sniff_1e_i_12
+    icon: mdi:speedometer-slow
+    unit_of_measurement: "%"
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: never
 
 
   # ------------------------------------------------------------
@@ -3006,7 +3021,7 @@ sensor:
     update_interval: 5s
 
   - platform: template
-    name: "Immergas - Boiler firmware version"
+    name: "Immergas - D91 Boiler firmware version"
     id: sensor_pdu_29_3031_version
     icon: mdi:chip
     entity_category: diagnostic
@@ -3397,6 +3412,11 @@ binary_sensor:
     name: "Immergas - HP Run request (boiler)"
     id: pc_zlecenie_pracy
     icon: mdi:power
+  # v1.3.1: night function U11 active (0x1E input 12 != 0) - compressor limited inside the U12-U13 window
+  - platform: template
+    name: "Immergas - HP Night function (U11)"
+    id: pc_funkcja_nocna
+    icon: mdi:weather-night
   - platform: template
     name: "Immergas - HP Request accepted"
     id: pc_zlecenie_przyjete
@@ -4495,12 +4515,17 @@ interval:
                   {'I', 36, id(pc_sprezarka_pracuje), 0, false},
                   {'I', 38, id(pc_wentylator_pracuje), 0, false},
                   {'I', 40, id(pc_zlecenie_przyjete), 0, false},
+                  {'I', 12, id(pc_funkcja_nocna), 0, false},  // v1.3.1: night function U11 (MIM echo of W2)
                 };
                 for (auto &b : btbl) {
                   if (b.kind == kind && b.reg == reg) {
                     if (!b.seen || b.last != value) { b.last = value; b.seen = true; b.b->publish_state(value != 0); }
                     break;
                   }
+                }
+                if (kind == 'I' && reg == 12) {  // v1.3.1: capacity limit %, 0 = no limit -> 100 %
+                  static int last12 = -99999;
+                  if (value != last12) { last12 = value; id(sniff_1e_i_12).publish_state(value == 0 ? 100.0f : (float) value); }
                 }
                 if (kind == 'I' && reg == 19) {  // operating stage: 1 standby, 2 starting, 3 running
                   static int last19 = -99999;
