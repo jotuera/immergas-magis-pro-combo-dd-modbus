@@ -19,7 +19,7 @@ The boiler is the Modbus **master**; this device is a **slave** that answers as 
 
 ## What's new in v1.6.0
 
-- **Languages.** Pick one file in the `packages:` list: `packages/lang/en.yaml` (default), `pl.yaml` (Polish) or `it.yaml` (named `dd_*.yaml` since 2.0.0) (Italian texts and fault descriptions; entity names still English - help welcome, see [TRANSLATING.md](TRANSLATING.md)). ⚠️ Switching language renames the entities, so Home Assistant creates new ones.
+- **Languages.** Pick one file in the `packages:` list: `packages/lang/dd_en.yaml` (default), `dd_pl.yaml` (Polish) or `dd_it.yaml` (Italian texts and fault descriptions; entity names still English - help welcome, see [TRANSLATING.md](TRANSLATING.md)). ⚠️ Switching language renames the entities, so Home Assistant creates new ones.
 - Fault descriptions in English, Italian **and Polish**.
 - New: **A11 Heat-pump module present**, zone phase **Air purge** (U50), 7 not-yet-decoded registers as disabled diagnostic sensors, `setpoint_step` substitution.
 

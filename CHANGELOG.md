@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.0.1
+
+- `uart:` in `dd_core` is now a list (`- id: dd_uart`), like the tt-bms and f1f2-nasa repos. With the old map form
+  ESPHome replaced it when the packages of several repos were merged on one device ("Couldn't find ID 'dd_uart'").
+  A single D+/D- device is unchanged (same resolved configuration, same entities).
+
 ## v2.0.0
 
 - **Naming scheme shared with tt-bms** (`dd_` prefix) so the Immergas repos can be combined on one device:

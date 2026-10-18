@@ -19,7 +19,7 @@ Kocioł jest Modbusowym **masterem**; to urządzenie jest **slave'em**, który o
 
 ## Co nowego w v1.6.0
 
-- **Języki.** Wybierz jeden plik na liście `packages:`: `packages/lang/en.yaml` (domyślny), `pl.yaml` (polski) lub `it.yaml` (nazwane `dd_*.yaml` od 2.0.0) (włoski — teksty i opisy błędów; nazwy encji wciąż po angielsku, pomoc mile widziana, zob. [TRANSLATING.md](TRANSLATING.md)). ⚠️ Zmiana języka zmienia nazwy encji, więc Home Assistant tworzy nowe.
+- **Języki.** Wybierz jeden plik na liście `packages:`: `packages/lang/dd_en.yaml` (domyślny), `dd_pl.yaml` (polski) lub `dd_it.yaml` (włoski — teksty i opisy błędów; nazwy encji wciąż po angielsku, pomoc mile widziana, zob. [TRANSLATING.md](TRANSLATING.md)). ⚠️ Zmiana języka zmienia nazwy encji, więc Home Assistant tworzy nowe.
 - Opisy błędów po angielsku, włosku **i polsku**.
 - Nowość: **A11 Heat-pump module present**, faza strefy **Air purge** (U50), 7 jeszcze nierozszyfrowanych rejestrów jako domyślnie wyłączone sensory diagnostyczne, podstawienie `setpoint_step`.
 

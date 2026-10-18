@@ -7,7 +7,7 @@
 substitutions:
   dd_author: "JoTu"
   dd_github_url: "https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus"
-  dd_project_version: "2.0.0"
+  dd_project_version: "2.0.1"
   # RS485 pins (M5Stack Atom + RS485 unit). Override in your main YAML if your wiring differs.
   dd_uart_tx_pin: GPIO26
   dd_uart_rx_pin: GPIO32
@@ -71,10 +71,10 @@ esphome:
 # Components of this project, downloaded from GitHub (nothing to copy next to this YAML):
 #   dd_bus_climate - climate entities backed by the bus state
 #   immergas_dd - shared helpers for the lambdas (HA/bus arbitration, fault texts)
-# @v2.0.0 = this release; @main = latest development version.
+# @v2.0.1 = this release; @main = latest development version.
 
 external_components:
-  - source: github://jotuera/immergas-magis-pro-combo-dd-modbus@v2.0.0
+  - source: github://jotuera/immergas-magis-pro-combo-dd-modbus@v2.0.1
     components: [dd_bus_climate, immergas_dd]
     refresh: 1d
 
@@ -86,17 +86,18 @@ time:
   - platform: homeassistant
     id: dd_ha_time
 
+# List form (like tt_/f1f2_), so the uart buses of the combined repos are merged, not replaced.
 uart:
-  id: dd_uart
-  tx_pin: ${dd_uart_tx_pin}
-  rx_pin: ${dd_uart_rx_pin}
-  # RS485 half-duplex in hardware (ESP-IDF UART_MODE_RS485_HALF_DUPLEX): the UART raises DE (RTS on GPIO23,
-  # HIGH = TX) right before the start bit and drops it after the last stop bit. write_array() returns at once:
-  # no flush()/busy-wait in the main loop. Previously DE was toggled in software with a 12/15 ms hold after
-  # every reply (~25-40 ms of blocked loop per frame, a few hundred frames per minute).
-  flow_control_pin: ${dd_uart_de_pin}
-  baud_rate: 9600
-  data_bits: 8
-  parity: EVEN
-  stop_bits: 1
-  rx_buffer_size: 1024
+  - id: dd_uart
+    tx_pin: ${dd_uart_tx_pin}
+    rx_pin: ${dd_uart_rx_pin}
+    # RS485 half-duplex in hardware (ESP-IDF UART_MODE_RS485_HALF_DUPLEX): the UART raises DE (RTS on GPIO23,
+    # HIGH = TX) right before the start bit and drops it after the last stop bit. write_array() returns at once:
+    # no flush()/busy-wait in the main loop. Previously DE was toggled in software with a 12/15 ms hold after
+    # every reply (~25-40 ms of blocked loop per frame, a few hundred frames per minute).
+    flow_control_pin: ${dd_uart_de_pin}
+    baud_rate: 9600
+    data_bits: 8
+    parity: EVEN
+    stop_bits: 1
+    rx_buffer_size: 1024
