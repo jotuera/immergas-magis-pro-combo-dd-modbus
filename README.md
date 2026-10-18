@@ -6,6 +6,12 @@ The boiler is the Modbus **master**; this device is a **slave** that answers as 
 
 > ⚠️ **Tested only on the Magis Combo V2 (`MPROCOMBOV2`).** The Dominus app supports many Immergas engines (Zeus, Star, VictrixMaior, …) with different register maps — this project targets **Magis Combo only**. Other models may partially work but are untested. Contributions welcome.
 
+## What's new in v1.6.0
+
+- **Languages.** Pick one file in the `packages:` list: `packages/lang/en.yaml` (default), `pl.yaml` (Polish) or `it.yaml` (Italian texts and fault descriptions; entity names still English - help welcome, see [TRANSLATING.md](TRANSLATING.md)). ⚠️ Switching language renames the entities, so Home Assistant creates new ones.
+- Fault descriptions in English, Italian **and Polish**.
+- New: **A11 Heat-pump module present**, zone phase **Air purge** (U50), 7 not-yet-decoded registers as disabled diagnostic sensors, `setpoint_step` substitution.
+
 ## What's new in v1.5.0
 
 - **The configuration is split into packages** (`packages/*.yaml`: core, engine, zone1, zones23, dhw, dominus, schedules, heat_pump, boiler_info, diagnostics). Your YAML is now ~100 lines: device name, Wi-Fi, credentials, temperature sources and a `packages:` block that downloads the rest from this repo. The resolved configuration is **identical to v1.4.0** (checked with `esphome config`), so nothing changes on the device or in Home Assistant.

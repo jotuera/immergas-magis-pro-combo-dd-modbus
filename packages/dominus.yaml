@@ -6,7 +6,7 @@
 switch:
   # v1.3.0: 0x29 6107 - setpoint correction by dew point calculation (read by the boiler from the panel)
   - platform: template
-    name: "Immergas - Dew point correction"
+    name: "${n_sw_punkt_rosy}"
     id: sw_punkt_rosy
     icon: mdi:water-thermometer-outline
     optimistic: true
@@ -17,13 +17,13 @@ number:
   # Dominus - "Manage Zone" screen
   # ------------------------------------------------------------
   - platform: template
-    name: "Immergas - Set Comfort Heat Zone 1"
+    name: "${n_number_dominus_comfort_heat}"
     id: number_dominus_comfort_heat
     icon: mdi:fire
     unit_of_measurement: "°C"
     min_value: 5
     max_value: 35
-    step: 0.1
+    step: ${setpoint_step}
     mode: slider
     optimistic: false
     lambda: |-
@@ -36,13 +36,13 @@ number:
           id(number_dominus_comfort_heat).publish_state(x);  // v61: natychmiastowy update suwaka
 
   - platform: template
-    name: "Immergas - Set Eco Heat Zone 1"
+    name: "${n_number_dominus_eco_heat}"
     id: number_dominus_eco_heat
     icon: mdi:leaf
     unit_of_measurement: "°C"
     min_value: 5
     max_value: 35
-    step: 0.1
+    step: ${setpoint_step}
     mode: slider
     optimistic: false
     lambda: |-
@@ -55,13 +55,13 @@ number:
           id(number_dominus_eco_heat).publish_state(x);  // v61: natychmiastowy update suwaka
 
   - platform: template
-    name: "Immergas - Set Comfort Cool Zone 1"
+    name: "${n_number_dominus_comfort_cool}"
     id: number_dominus_comfort_cool
     icon: mdi:snowflake
     unit_of_measurement: "°C"
     min_value: 5
     max_value: 35
-    step: 0.1
+    step: ${setpoint_step}
     mode: slider
     optimistic: false
     lambda: |-
@@ -74,13 +74,13 @@ number:
           id(number_dominus_comfort_cool).publish_state(x);  // v61: natychmiastowy update suwaka
 
   - platform: template
-    name: "Immergas - Set Eco Cool Zone 1"
+    name: "${n_number_dominus_eco_cool}"
     id: number_dominus_eco_cool
     icon: mdi:snowflake-thermometer
     unit_of_measurement: "°C"
     min_value: 5
     max_value: 35
-    step: 0.1
+    step: ${setpoint_step}
     mode: slider
     optimistic: false
     lambda: |-
@@ -93,7 +93,7 @@ number:
           id(number_dominus_eco_cool).publish_state(x);  // v61: natychmiastowy update suwaka
 
   - platform: template
-    name: "Immergas - U07 Humidity setting zone 1"
+    name: "${n_number_dominus_humidity}"
     id: number_dominus_humidity
     icon: mdi:water-percent
     unit_of_measurement: "%"
@@ -112,7 +112,7 @@ number:
           id(number_dominus_humidity).publish_state(x);  // v61: natychmiastowy update suwaka
 
   - platform: template
-    name: "Immergas - Set Flow Zone 1"
+    name: "${n_number_dominus_set_flow}"
     id: number_dominus_set_flow
     icon: mdi:coolant-temperature
     unit_of_measurement: "°C"
@@ -133,56 +133,56 @@ number:
 select:
   # v1.3.0: 0x29 2294 - time programs active (read by the boiler from the panel; zones 2/3 inherit it)
   - platform: template
-    name: "Immergas - Time programs Zone 1"
+    name: "${n_sel_programy_czasowe}"
     id: sel_programy_czasowe
     icon: mdi:calendar-clock
     optimistic: true
     restore_value: true
     options:
-      - "Manual"
-      - "Auto"
-    initial_option: "Manual"
+      - "${t_tp_manual}"
+      - "${t_tp_auto}"
+    initial_option: "${t_tp_manual}"
   # v1.3.0: 0x29 6105 - modulation with the room probe (panel Service menu -> Zone definition)
   - platform: template
-    name: "Immergas - Room probe modulation"
+    name: "${n_sel_modulacja_sonda}"
     id: sel_modulacja_sonda
     icon: mdi:home-thermometer-outline
     optimistic: true
     restore_value: true
     options:
-      - "NO"
-      - "YES"
-    initial_option: "NO"
+      - "${t_no}"
+      - "${t_yes}"
+    initial_option: "${t_no}"
   - platform: template
-    name: "Immergas - System operating mode"
+    name: "${n_operating_mode_select}"
     id: operating_mode_select
     icon: mdi:state-machine
     # v60: optimistic MUSI byc false bo jest lambda (ESPHome: "optimistic cannot be used with
     # lambda"). Instant-feedback robimy przez publish_state(x) w set_action ponizej.
     optimistic: false
     options:
-      - "Standby"
-      - "Summer DHW"
-      - "Cooling"
-      - "Winter CH+DHW"
+      - "${t_mode_standby}"
+      - "${t_mode_summer}"
+      - "${t_mode_cooling}"
+      - "${t_mode_winter}"
     lambda: |-
       switch (id(operating_mode_raw)) {
-        case 0: return std::string("Standby");
-        case 1: return std::string("Summer DHW");
-        case 2: return std::string("Cooling");
-        case 3: return std::string("Winter CH+DHW");
-        default: return std::string("Winter CH+DHW");
+        case 0: return std::string("${t_mode_standby}");
+        case 1: return std::string("${t_mode_summer}");
+        case 2: return std::string("${t_mode_cooling}");
+        case 3: return std::string("${t_mode_winter}");
+        default: return std::string("${t_mode_winter}");
       }
     set_action:
       - lambda: |-
           int mode = 3;
-          if (x == "Standby") {
+          if (x == "${t_mode_standby}") {
             mode = 0;
-          } else if (x == "Summer DHW") {
+          } else if (x == "${t_mode_summer}") {
             mode = 1;
-          } else if (x == "Cooling") {
+          } else if (x == "${t_mode_cooling}") {
             mode = 2;
-          } else if (x == "Winter CH+DHW") {
+          } else if (x == "${t_mode_winter}") {
             mode = 3;
           }
 
@@ -204,12 +204,12 @@ select:
 text_sensor:
   # v1.3.0 decoded zone-panel registers (0x29)
   - platform: template
-    name: "Immergas - A31 Zone 1 room thermostat"
+    name: "${n_panel_a31_termostat}"
     id: panel_a31_termostat
     icon: mdi:thermostat
     update_interval: never
   - platform: template
-    name: "Immergas - Time program state (boiler)"
+    name: "${n_piec_stan_programu}"
     id: piec_stan_programu
     icon: mdi:calendar-check
     update_interval: never

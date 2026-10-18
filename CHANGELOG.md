@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.6.0
+
+- **Translations**: entity names and the texts shown in HA come from a language file - `packages/lang/en.yaml`, `pl.yaml` or `it.yaml` (Italian: texts and fault descriptions translated, entity names still English - contributions welcome, see TRANSLATING.md). English output is unchanged.
+- Fault descriptions also in **Polish**; "Fault language" select: English / Italiano / Polski, default from the language file.
+- New: `A11 Heat-pump module present` (0x29 6150), zone phase "Air purge" during U50 (2010 = 1), 7 raw registers not decoded yet (diagnostic, **disabled by default**).
+- `setpoint_step` substitution (default 0.1 C) for the setpoint sliders / Zone 1 climate.
+
 ## v1.5.0
 
 - The configuration is split into packages (`packages/*.yaml`) loaded from GitHub by the main YAML. The resolved configuration is identical to v1.4.0 (verified with `esphome config`), so nothing changes on the device or in Home Assistant.

@@ -6,7 +6,7 @@
 # setpoints, weekly schedules, operating mode and boiler faults. See README.md for wiring, the register
 # map and setup.
 #
-# Project : jotuera.immergas-magis-pro-combo-dd-modbus  |  v1.5.0
+# Project : jotuera.immergas-magis-pro-combo-dd-modbus  |  v1.6.0
 # Repo    : https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus
 # License : MIT (c) 2026 JoTu
 # Tested  : Magis Combo V2 (MPROCOMBOV2). Other Immergas engines use different register maps - untested.
@@ -15,6 +15,8 @@
 #
 # This file is all you copy into ESPHome. The code lives in packages/*.yaml of the repo and is fetched from GitHub
 # (packages: below). Keep the list of files complete - the packages depend on each other.
+# Language: pick ONE file from packages/lang/ (en, pl, it). Any single name or text can be overridden in
+# substitutions: below, e.g.  n_zone1_setpoint_number: "Immergas - My setpoint". Setpoint step: setpoint_step: "0.5".
 
 substitutions:
   # v64 HYBRID: 4 temp/humidity sources for the emulated panel 0x29 (Basement/Ground/Upper/House).
@@ -89,7 +91,7 @@ web_server:
 packages:
   dd_modbus:
     url: https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus
-    ref: v1.5.0
+    ref: v1.6.0
     refresh: 1d
     files:
       - packages/core.yaml
@@ -102,3 +104,4 @@ packages:
       - packages/heat_pump.yaml
       - packages/boiler_info.yaml
       - packages/diagnostics.yaml
+      - packages/lang/en.yaml      # language of the entity names and texts: en | pl | it

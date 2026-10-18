@@ -7,7 +7,7 @@ number:
   # v57 DHW setpoint - control (the emulator returns it on READ 2095, the boiler applies it)
   # ------------------------------------------------------------
   - platform: template
-    name: "Immergas - D05 DHW setpoint value"
+    name: "${n_cwu_setpoint_number}"
     id: cwu_setpoint_number
     icon: mdi:water-thermometer
     unit_of_measurement: "°C"
@@ -28,7 +28,7 @@ number:
 sensor:
   # 3015 = DHW setpoint the boiler is actually using (e.g. 60 during anti-legionella)
   - platform: template
-    name: "Immergas - D05 Active DHW setpoint (boiler)"
+    name: "${n_sniff_29_w_3015}"
     id: sniff_29_w_3015
     icon: mdi:thermometer
     device_class: temperature
@@ -40,7 +40,7 @@ sensor:
   # Main user values
   # ------------------------------------------------------------
   - platform: template
-    name: "Immergas - D03 DHW cylinder temperature"
+    name: "${n_dhw_temp_sensor}"
     id: dhw_temp_sensor
     icon: mdi:thermometer-water
     unit_of_measurement: "°C"
@@ -54,7 +54,7 @@ sensor:
 
 climate:
   - platform: bus_climate
-    name: "Immergas - DHW Thermostat"
+    name: "${n_cwu_thermostat}"
     id: cwu_thermostat
     icon: mdi:water-boiler
     update_interval: 2s

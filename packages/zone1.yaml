@@ -7,13 +7,13 @@ number:
   # Zone 1 - active setpoint and U03/Offset
   # ------------------------------------------------------------
   - platform: template
-    name: "Immergas - CH Setpoint Zone 1"
+    name: "${n_zone1_setpoint_number}"
     id: zone1_setpoint_number
     icon: mdi:home-thermometer
     unit_of_measurement: "°C"
     min_value: 5
     max_value: 35
-    step: 0.1
+    step: ${setpoint_step}
     mode: slider
     optimistic: false
     lambda: |-
@@ -27,7 +27,7 @@ number:
           id(zone1_setpoint_number).publish_state(x);  // v61: natychmiastowy update suwaka w HA
 
   - platform: template
-    name: "Immergas - U03 Heating offset (CH) zone 1"
+    name: "${n_zone1_offset_number}"
     id: zone1_offset_number
     icon: mdi:sine-wave
     unit_of_measurement: "°C"
@@ -49,25 +49,25 @@ number:
 select:
   # v100: 5 sources for Zone 1 (Panel/Basement/Ground floor/Upper floor/Whole house), default Upper floor (idx 4).
   - platform: template
-    name: "Immergas - Temperature source Zone 1"
+    name: "${n_temp_source_select}"
     id: temp_source_select
     icon: mdi:thermometer
     optimistic: true
     entity_category: config
     options:
-      - "Panel"
-      - "Basement"
-      - "Ground floor"
-      - "Upper floor"
-      - "Whole house"
-    initial_option: "Upper floor"
+      - "${t_src_panel}"
+      - "${t_src_basement}"
+      - "${t_src_ground}"
+      - "${t_src_upper}"
+      - "${t_src_house}"
+    initial_option: "${t_src_upper}"
     set_action:
       - lambda: |-
           int idx = 4;
-          if (x == "Panel") idx = 1;
-          else if (x == "Basement") idx = 2;
-          else if (x == "Ground floor") idx = 3;
-          else if (x == "Whole house") idx = 5;
+          if (x == "${t_src_panel}") idx = 1;
+          else if (x == "${t_src_basement}") idx = 2;
+          else if (x == "${t_src_ground}") idx = 3;
+          else if (x == "${t_src_house}") idx = 5;
           id(temp_src_idx) = idx;
           switch (idx) {
             case 1: id(ha_room_temp_raw) = id(ha_temp_raw_1); break;
@@ -78,25 +78,25 @@ select:
           }
           ESP_LOGW("dd_control", "v100 Zrodlo TEMP Strefy 1 -> %d (%s)", idx, x.c_str());
   - platform: template
-    name: "Immergas - Humidity source Zone 1"
+    name: "${n_hum_source_select}"
     id: hum_source_select
     icon: mdi:water-percent
     optimistic: true
     entity_category: config
     options:
-      - "Panel"
-      - "Basement"
-      - "Ground floor"
-      - "Upper floor"
-      - "Whole house"
-    initial_option: "Upper floor"
+      - "${t_src_panel}"
+      - "${t_src_basement}"
+      - "${t_src_ground}"
+      - "${t_src_upper}"
+      - "${t_src_house}"
+    initial_option: "${t_src_upper}"
     set_action:
       - lambda: |-
           int idx = 4;
-          if (x == "Panel") idx = 1;
-          else if (x == "Basement") idx = 2;
-          else if (x == "Ground floor") idx = 3;
-          else if (x == "Whole house") idx = 5;
+          if (x == "${t_src_panel}") idx = 1;
+          else if (x == "${t_src_basement}") idx = 2;
+          else if (x == "${t_src_ground}") idx = 3;
+          else if (x == "${t_src_house}") idx = 5;
           id(hum_src_idx) = idx;
           switch (idx) {
             case 1: id(ha_room_humidity_raw) = id(ha_hum_raw_1); break;
@@ -112,7 +112,7 @@ sensor:
   # v62: inputs from HA - Zone 1 room temp and humidity (for the emulated panel 0x29).
   # ------------------------------------------------------------
   # v63: 3 temp sources. Each updates its buffer; if currently selected -> also the output.
-  # v101: source 1 "Panel" (Zone 1 temp) = real PDU 2005 of the physical panel 0x29
+  # v101: source 1 "${t_src_panel}" (Zone 1 temp) = real PDU 2005 of the physical panel 0x29
   # (handle_pdu -> ha_temp_raw_1), nie z HA.
   - platform: homeassistant
     id: ha_temp_in_2
@@ -148,7 +148,7 @@ sensor:
             if (id(temp_src_idx) == 5) id(ha_room_temp_raw) = id(ha_temp_raw_5); }
 
   # v64/v100: 5 humidity sources (same as above).
-  # v101: source 1 "Panel" (Zone 1 humidity) = real PDU 2006 of the physical panel 0x29
+  # v101: source 1 "${t_src_panel}" (Zone 1 humidity) = real PDU 2006 of the physical panel 0x29
   # (handle_pdu -> ha_hum_raw_1), nie z HA.
   - platform: homeassistant
     id: ha_hum_in_2
@@ -184,7 +184,7 @@ sensor:
             if (id(hum_src_idx) == 5) id(ha_room_humidity_raw) = id(ha_hum_raw_5); }
 
   - platform: template
-    name: "Immergas - Temperature Zone 1"
+    name: "${n_zone1_temp_sensor}"
     id: zone1_temp_sensor
     icon: mdi:home-thermometer-outline
     unit_of_measurement: "°C"
@@ -200,7 +200,7 @@ sensor:
   # Values from the Zone 1 panel / 0x29 diagnostics
   # ------------------------------------------------------------
   - platform: template
-    name: "Immergas - D41 Relative humidity zone 1"
+    name: "${n_sensor_zone1_humidity}"
     id: sensor_zone1_humidity
     icon: mdi:water-percent
     unit_of_measurement: "%"
@@ -215,21 +215,22 @@ text_sensor:
   # v73: Zone 1 operating phase (Comfort/Eco/Manual) from PDU 2010 LB. bit6=Comfort, bit7=Eco, bit2=Manual
   # (Dominus app logic: flag8 bits 2/6/7). Read-only - the boiler writes 2010 to us (captured in handle_pdu).
   - platform: template
-    name: "Immergas - Zone 1 phase (Comfort-Eco)"
+    name: "${n_dd_zone1_phase_text}"
     id: dd_zone1_phase_text
     icon: mdi:home-thermometer
     update_interval: 10s
     lambda: |-
       int lb = id(dd_zone1_status_raw) & 0xFF;
-      if (lb & 0x40) return std::string("Comfort");
-      if (lb & 0x80) return std::string("Eco");
-      if (lb & 0x04) return std::string("Manual");
+      if (lb & 0x40) return std::string("${t_phase_comfort}");
+      if (lb & 0x80) return std::string("${t_phase_eco}");
+      if (lb & 0x04) return std::string("${t_phase_manual}");
+      if (lb == 0x01) return std::string("${t_phase_purge}");  // U50 (2010 = 1)
       return std::string("—");
 
 binary_sensor:
   # Zone 1 heating/cooling request = PDU 2010 bit3 (verified: 2010 = 12 with heating active).
   - platform: template
-    name: "Immergas - Zone 1 heating request"
+    name: "${n_bs_zone1_heat_request}"
     id: bs_zone1_heat_request
     icon: mdi:fire  # no device_class heat: HA would show "hot"/"normal" instead of on/off
     lambda: |-
@@ -237,7 +238,7 @@ binary_sensor:
 
 climate:
   - platform: bus_climate
-    name: "Immergas - Thermostat Zone 1 (CH)"
+    name: "${n_co_thermostat}"
     id: co_thermostat
     icon: mdi:radiator
     update_interval: 2s
@@ -246,7 +247,7 @@ climate:
       min_temperature: 5
       max_temperature: 35
       temperature_step:
-        target_temperature: 0.1
+        target_temperature: ${setpoint_step}
         current_temperature: 0.1
     current_temperature_lambda: |-
       if (id(ha_room_temp_raw) <= 0) return NAN;
@@ -290,7 +291,7 @@ climate:
     set_mode_action:
       - lambda: |-
           // OFF = Summer (DHW only): heating/cooling off, hot water kept. Standby stays on the mode select.
-          const char *opt = "Summer DHW";
-          if (x == climate::CLIMATE_MODE_HEAT) opt = "Winter CH+DHW";
-          else if (x == climate::CLIMATE_MODE_COOL) opt = "Cooling";
+          const char *opt = "${t_mode_summer}";
+          if (x == climate::CLIMATE_MODE_HEAT) opt = "${t_mode_winter}";
+          else if (x == climate::CLIMATE_MODE_COOL) opt = "${t_mode_cooling}";
           id(operating_mode_select).make_call().set_option(opt).perform();

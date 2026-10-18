@@ -4,7 +4,7 @@
 
 switch:
   - platform: template
-    name: "Immergas - Emulate Panel Zone 2"
+    name: "${n_dd_emulate_2a_switch}"
     id: dd_emulate_2a_switch
     icon: mdi:robot
     entity_category: diagnostic
@@ -31,7 +31,7 @@ switch:
           ESP_LOGW("dd_mode", "v85 EMULACJA Strefy 2 addr 42 wylaczona");
 
   - platform: template
-    name: "Immergas - Emulate Panel Zone 3"
+    name: "${n_dd_emulate_2b_switch}"
     id: dd_emulate_2b_switch
     icon: mdi:robot
     entity_category: diagnostic
@@ -61,7 +61,7 @@ number:
   # v96: ZONE 2/3 - CH setpoint + offset. Placeholders (the boiler reads zones 2/3 only in a multi-zone
   # setup A13; the 0x2A/0x2B serving backend doesn't exist yet). Sliders set the global + sync the thermostat.
   - platform: template
-    name: "Immergas - CH Setpoint Zone 2"
+    name: "${n_zone2_setpoint_number}"
     id: zone2_setpoint_number
     icon: mdi:home-thermometer
     unit_of_measurement: "°C"
@@ -80,7 +80,7 @@ number:
           id(zone2_setpoint_number).publish_state(x);
 
   - platform: template
-    name: "Immergas - CH Setpoint Zone 3"
+    name: "${n_zone3_setpoint_number}"
     id: zone3_setpoint_number
     icon: mdi:home-thermometer
     unit_of_measurement: "°C"
@@ -99,7 +99,7 @@ number:
           id(zone3_setpoint_number).publish_state(x);
 
   - platform: template
-    name: "Immergas - U04 Heating offset (CH) zone 2"
+    name: "${n_zone2_offset_number}"
     id: zone2_offset_number
     icon: mdi:sine-wave
     unit_of_measurement: "°C"
@@ -118,7 +118,7 @@ number:
           id(zone2_offset_number).publish_state(x);
 
   - platform: template
-    name: "Immergas - U16 Heating offset (CH) zone 3"
+    name: "${n_zone3_offset_number}"
     id: zone3_offset_number
     icon: mdi:sine-wave
     unit_of_measurement: "°C"
@@ -138,7 +138,7 @@ number:
 
   # v102: "Manage Zone" settings - Zone 2 (0x2A)
   - platform: template
-    name: "Immergas - Set Comfort Heat Zone 2"
+    name: "${n_number_dominus_comfort_heat_z2}"
     id: number_dominus_comfort_heat_z2
     icon: mdi:fire
     unit_of_measurement: "°C"
@@ -157,7 +157,7 @@ number:
           id(number_dominus_comfort_heat_z2).publish_state(x);
 
   - platform: template
-    name: "Immergas - Set Eco Heat Zone 2"
+    name: "${n_number_dominus_eco_heat_z2}"
     id: number_dominus_eco_heat_z2
     icon: mdi:leaf
     unit_of_measurement: "°C"
@@ -176,7 +176,7 @@ number:
           id(number_dominus_eco_heat_z2).publish_state(x);
 
   - platform: template
-    name: "Immergas - Set Comfort Cool Zone 2"
+    name: "${n_number_dominus_comfort_cool_z2}"
     id: number_dominus_comfort_cool_z2
     icon: mdi:snowflake
     unit_of_measurement: "°C"
@@ -195,7 +195,7 @@ number:
           id(number_dominus_comfort_cool_z2).publish_state(x);
 
   - platform: template
-    name: "Immergas - Set Eco Cool Zone 2"
+    name: "${n_number_dominus_eco_cool_z2}"
     id: number_dominus_eco_cool_z2
     icon: mdi:snowflake-thermometer
     unit_of_measurement: "°C"
@@ -214,7 +214,7 @@ number:
           id(number_dominus_eco_cool_z2).publish_state(x);
 
   - platform: template
-    name: "Immergas - U08 Humidity setting zone 2"
+    name: "${n_number_dominus_humidity_z2}"
     id: number_dominus_humidity_z2
     icon: mdi:water-percent
     unit_of_measurement: "%"
@@ -233,7 +233,7 @@ number:
           id(number_dominus_humidity_z2).publish_state(x);
 
   - platform: template
-    name: "Immergas - Set Flow Zone 2"
+    name: "${n_number_dominus_set_flow_z2}"
     id: number_dominus_set_flow_z2
     icon: mdi:coolant-temperature
     unit_of_measurement: "°C"
@@ -254,7 +254,7 @@ number:
 
   # v102: "Manage Zone" settings - Zone 3 (0x2B)
   - platform: template
-    name: "Immergas - Set Comfort Heat Zone 3"
+    name: "${n_number_dominus_comfort_heat_z3}"
     id: number_dominus_comfort_heat_z3
     icon: mdi:fire
     unit_of_measurement: "°C"
@@ -273,7 +273,7 @@ number:
           id(number_dominus_comfort_heat_z3).publish_state(x);
 
   - platform: template
-    name: "Immergas - Set Eco Heat Zone 3"
+    name: "${n_number_dominus_eco_heat_z3}"
     id: number_dominus_eco_heat_z3
     icon: mdi:leaf
     unit_of_measurement: "°C"
@@ -292,7 +292,7 @@ number:
           id(number_dominus_eco_heat_z3).publish_state(x);
 
   - platform: template
-    name: "Immergas - Set Comfort Cool Zone 3"
+    name: "${n_number_dominus_comfort_cool_z3}"
     id: number_dominus_comfort_cool_z3
     icon: mdi:snowflake
     unit_of_measurement: "°C"
@@ -311,7 +311,7 @@ number:
           id(number_dominus_comfort_cool_z3).publish_state(x);
 
   - platform: template
-    name: "Immergas - Set Eco Cool Zone 3"
+    name: "${n_number_dominus_eco_cool_z3}"
     id: number_dominus_eco_cool_z3
     icon: mdi:snowflake-thermometer
     unit_of_measurement: "°C"
@@ -330,7 +330,7 @@ number:
           id(number_dominus_eco_cool_z3).publish_state(x);
 
   - platform: template
-    name: "Immergas - U18 Humidity setting zone 3"
+    name: "${n_number_dominus_humidity_z3}"
     id: number_dominus_humidity_z3
     icon: mdi:water-percent
     unit_of_measurement: "%"
@@ -349,7 +349,7 @@ number:
           id(number_dominus_humidity_z3).publish_state(x);
 
   - platform: template
-    name: "Immergas - Set Flow Zone 3"
+    name: "${n_number_dominus_set_flow_z3}"
     id: number_dominus_set_flow_z3
     icon: mdi:coolant-temperature
     unit_of_measurement: "°C"
@@ -370,25 +370,25 @@ number:
 select:
   # v100: switchable 5-option temp/humidity sources for Zone 2 and 3 (Panel/Basement/Ground floor/Upper floor/Whole house), default Panel.
   - platform: template
-    name: "Immergas - Temperature source Zone 2"
+    name: "${n_temp_source_z2_select}"
     id: temp_source_z2_select
     icon: mdi:thermometer
     optimistic: true
     entity_category: config
     options:
-      - "Panel"
-      - "Basement"
-      - "Ground floor"
-      - "Upper floor"
-      - "Whole house"
-    initial_option: "Panel"
+      - "${t_src_panel}"
+      - "${t_src_basement}"
+      - "${t_src_ground}"
+      - "${t_src_upper}"
+      - "${t_src_house}"
+    initial_option: "${t_src_panel}"
     set_action:
       - lambda: |-
           int idx = 1;
-          if (x == "Basement") idx = 2;
-          else if (x == "Ground floor") idx = 3;
-          else if (x == "Upper floor") idx = 4;
-          else if (x == "Whole house") idx = 5;
+          if (x == "${t_src_basement}") idx = 2;
+          else if (x == "${t_src_ground}") idx = 3;
+          else if (x == "${t_src_upper}") idx = 4;
+          else if (x == "${t_src_house}") idx = 5;
           id(temp_src_z2_idx) = idx;
           switch (idx) {
             case 1: id(ha_room_temp_2_raw) = id(ha_temp_raw_z2_1); break;
@@ -399,25 +399,25 @@ select:
           }
           ESP_LOGW("dd_control", "v100 Zrodlo TEMP Strefy 2 -> %d (%s)", idx, x.c_str());
   - platform: template
-    name: "Immergas - Temperature source Zone 3"
+    name: "${n_temp_source_z3_select}"
     id: temp_source_z3_select
     icon: mdi:thermometer
     optimistic: true
     entity_category: config
     options:
-      - "Panel"
-      - "Basement"
-      - "Ground floor"
-      - "Upper floor"
-      - "Whole house"
-    initial_option: "Panel"
+      - "${t_src_panel}"
+      - "${t_src_basement}"
+      - "${t_src_ground}"
+      - "${t_src_upper}"
+      - "${t_src_house}"
+    initial_option: "${t_src_panel}"
     set_action:
       - lambda: |-
           int idx = 1;
-          if (x == "Basement") idx = 2;
-          else if (x == "Ground floor") idx = 3;
-          else if (x == "Upper floor") idx = 4;
-          else if (x == "Whole house") idx = 5;
+          if (x == "${t_src_basement}") idx = 2;
+          else if (x == "${t_src_ground}") idx = 3;
+          else if (x == "${t_src_upper}") idx = 4;
+          else if (x == "${t_src_house}") idx = 5;
           id(temp_src_z3_idx) = idx;
           switch (idx) {
             case 1: id(ha_room_temp_3_raw) = id(ha_temp_raw_z3_1); break;
@@ -428,25 +428,25 @@ select:
           }
           ESP_LOGW("dd_control", "v100 Zrodlo TEMP Strefy 3 -> %d (%s)", idx, x.c_str());
   - platform: template
-    name: "Immergas - Humidity source Zone 2"
+    name: "${n_hum_source_z2_select}"
     id: hum_source_z2_select
     icon: mdi:water-percent
     optimistic: true
     entity_category: config
     options:
-      - "Panel"
-      - "Basement"
-      - "Ground floor"
-      - "Upper floor"
-      - "Whole house"
-    initial_option: "Panel"
+      - "${t_src_panel}"
+      - "${t_src_basement}"
+      - "${t_src_ground}"
+      - "${t_src_upper}"
+      - "${t_src_house}"
+    initial_option: "${t_src_panel}"
     set_action:
       - lambda: |-
           int idx = 1;
-          if (x == "Basement") idx = 2;
-          else if (x == "Ground floor") idx = 3;
-          else if (x == "Upper floor") idx = 4;
-          else if (x == "Whole house") idx = 5;
+          if (x == "${t_src_basement}") idx = 2;
+          else if (x == "${t_src_ground}") idx = 3;
+          else if (x == "${t_src_upper}") idx = 4;
+          else if (x == "${t_src_house}") idx = 5;
           id(hum_src_z2_idx) = idx;
           switch (idx) {
             case 1: id(ha_room_humidity_2_raw) = id(ha_hum_raw_z2_1); break;
@@ -457,25 +457,25 @@ select:
           }
           ESP_LOGW("dd_control", "v100 Zrodlo WILG Strefy 2 -> %d (%s)", idx, x.c_str());
   - platform: template
-    name: "Immergas - Humidity source Zone 3"
+    name: "${n_hum_source_z3_select}"
     id: hum_source_z3_select
     icon: mdi:water-percent
     optimistic: true
     entity_category: config
     options:
-      - "Panel"
-      - "Basement"
-      - "Ground floor"
-      - "Upper floor"
-      - "Whole house"
-    initial_option: "Panel"
+      - "${t_src_panel}"
+      - "${t_src_basement}"
+      - "${t_src_ground}"
+      - "${t_src_upper}"
+      - "${t_src_house}"
+    initial_option: "${t_src_panel}"
     set_action:
       - lambda: |-
           int idx = 1;
-          if (x == "Basement") idx = 2;
-          else if (x == "Ground floor") idx = 3;
-          else if (x == "Upper floor") idx = 4;
-          else if (x == "Whole house") idx = 5;
+          if (x == "${t_src_basement}") idx = 2;
+          else if (x == "${t_src_ground}") idx = 3;
+          else if (x == "${t_src_upper}") idx = 4;
+          else if (x == "${t_src_house}") idx = 5;
           id(hum_src_z3_idx) = idx;
           switch (idx) {
             case 1: id(ha_room_humidity_3_raw) = id(ha_hum_raw_z3_1); break;
@@ -487,7 +487,7 @@ select:
           ESP_LOGW("dd_control", "v100 Zrodlo WILG Strefy 3 -> %d (%s)", idx, x.c_str());
 
 sensor:
-  # v101: HA sources for Zone 2/3 (slots 2-5). Slot 1 "Panel" NOT from HA - real PDU 2005/2006 of the panel
+  # v101: HA sources for Zone 2/3 (slots 2-5). Slot 1 "${t_src_panel}" NOT from HA - real PDU 2005/2006 of the panel
   # 0x2A/0x2B (handle_pdu -> ha_temp/hum_raw_z2/z3_1). Each writes its buffer; the active one (idx) -> output.
   - platform: homeassistant
     id: ha_temp_in_z2_2
@@ -619,7 +619,7 @@ sensor:
             if (id(hum_src_z3_idx) == 5) id(ha_room_humidity_3_raw) = id(ha_hum_raw_z3_5); }
 
   - platform: template
-    name: "Immergas - D42 Relative humidity zone 2"
+    name: "${n_sensor_zone2_humidity}"
     id: sensor_zone2_humidity
     icon: mdi:water-percent
     unit_of_measurement: "%"
@@ -631,7 +631,7 @@ sensor:
     update_interval: 5s
 
   - platform: template
-    name: "Immergas - D102 Relative humidity zone 3"
+    name: "${n_sensor_zone3_humidity}"
     id: sensor_zone3_humidity
     icon: mdi:water-percent
     unit_of_measurement: "%"
@@ -643,7 +643,7 @@ sensor:
     update_interval: 5s
 
   - platform: template
-    name: "Immergas - Temperature Zone 2"
+    name: "${n_sensor_zone2_temp}"
     id: sensor_zone2_temp
     icon: mdi:home-thermometer-outline
     unit_of_measurement: "°C"
@@ -656,7 +656,7 @@ sensor:
     update_interval: 5s
 
   - platform: template
-    name: "Immergas - Temperature Zone 3"
+    name: "${n_sensor_zone3_temp}"
     id: sensor_zone3_temp
     icon: mdi:home-thermometer-outline
     unit_of_measurement: "°C"
@@ -669,7 +669,7 @@ sensor:
     update_interval: 5s
 
   - platform: template
-    name: "Immergas - Panel firmware version Zone 2"
+    name: "${n_sensor_panel2_version}"
     id: sensor_panel2_version
     icon: mdi:monitor-dashboard
     entity_category: diagnostic
@@ -680,7 +680,7 @@ sensor:
     update_interval: 30s
 
   - platform: template
-    name: "Immergas - Panel firmware version Zone 3"
+    name: "${n_sensor_panel3_version}"
     id: sensor_panel3_version
     icon: mdi:monitor-dashboard
     entity_category: diagnostic
@@ -694,35 +694,37 @@ text_sensor:
   # v96: Zone 2 operating phase (Comfort/Eco/Manual) from dd_zone2_status_raw. Placeholder - the boiler writes
   # zone 2 status only in a multi-zone setup (A13); with no data shows "—".
   - platform: template
-    name: "Immergas - Zone 2 phase (Comfort-Eco)"
+    name: "${n_dd_zone2_phase_text}"
     id: dd_zone2_phase_text
     icon: mdi:home-thermometer
     update_interval: 10s
     lambda: |-
       if (!id(dd_emulate_2a_diag)) return std::string("—");
       int lb = id(dd_zone2_status_raw) & 0xFF;
-      if (lb & 0x40) return std::string("Comfort");
-      if (lb & 0x80) return std::string("Eco");
-      if (lb & 0x04) return std::string("Manual");
+      if (lb & 0x40) return std::string("${t_phase_comfort}");
+      if (lb & 0x80) return std::string("${t_phase_eco}");
+      if (lb & 0x04) return std::string("${t_phase_manual}");
+      if (lb == 0x01) return std::string("${t_phase_purge}");  // U50 (2010 = 1)
       return std::string("—");
 
   # v96: Zone 3 operating phase (Comfort/Eco/Manual) from dd_zone3_status_raw. Placeholder like Zone 2.
   - platform: template
-    name: "Immergas - Zone 3 phase (Comfort-Eco)"
+    name: "${n_dd_zone3_phase_text}"
     id: dd_zone3_phase_text
     icon: mdi:home-thermometer
     update_interval: 10s
     lambda: |-
       if (!id(dd_emulate_2b_diag)) return std::string("—");
       int lb = id(dd_zone3_status_raw) & 0xFF;
-      if (lb & 0x40) return std::string("Comfort");
-      if (lb & 0x80) return std::string("Eco");
-      if (lb & 0x04) return std::string("Manual");
+      if (lb & 0x40) return std::string("${t_phase_comfort}");
+      if (lb & 0x80) return std::string("${t_phase_eco}");
+      if (lb & 0x04) return std::string("${t_phase_manual}");
+      if (lb == 0x01) return std::string("${t_phase_purge}");  // U50 (2010 = 1)
       return std::string("—");
 
 binary_sensor:
   - platform: template
-    name: "Immergas - Connection Panel Zone 2"
+    name: "${n_bs_panel2_online}"
     id: bs_panel2_online
     device_class: connectivity
     entity_category: diagnostic
@@ -731,7 +733,7 @@ binary_sensor:
       return (millis() - id(dd_last_2a_read_ms)) < 30000;
 
   - platform: template
-    name: "Immergas - Connection Panel Zone 3"
+    name: "${n_bs_panel3_online}"
     id: bs_panel3_online
     device_class: connectivity
     entity_category: diagnostic
@@ -743,7 +745,7 @@ climate:
   # Zone 2/3: same model. Current temperature = the zone's room value (NAN when that zone's panel emulation
   # is OFF); phase/request from 2010 written to 0x2A/0x2B (multi-zone setups only, A13).
   - platform: bus_climate
-    name: "Immergas - Thermostat Zone 2 (CH)"
+    name: "${n_co_thermostat_2}"
     id: co_thermostat_2
     icon: mdi:radiator
     update_interval: 2s
@@ -790,7 +792,7 @@ climate:
           id(zone2_setpoint_number).make_call().set_value(raw / 10.0f).perform();
 
   - platform: bus_climate
-    name: "Immergas - Thermostat Zone 3 (CH)"
+    name: "${n_co_thermostat_3}"
     id: co_thermostat_3
     icon: mdi:radiator
     update_interval: 2s

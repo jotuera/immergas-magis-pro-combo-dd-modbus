@@ -5,11 +5,13 @@
 substitutions:
   author: "JoTu"
   github_url: "https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus"
-  project_version: "1.5.0"
+  project_version: "1.6.0"
   # RS485 pins (M5Stack Atom + RS485 unit). Override in your main YAML if your wiring differs.
   uart_tx_pin: GPIO26
   uart_rx_pin: GPIO32
   uart_de_pin: GPIO23
+  # Step of the setpoint sliders/climates (C). 0.1 = fine control; 0.5 = like the Dominus app.
+  setpoint_step: "0.1"
 
 esphome:
   comment: "Immergas Dominus/Panel (D+/D-) emulator | author: ${author} | ${github_url}"
@@ -26,10 +28,10 @@ esphome:
 # Components of this project, downloaded from GitHub (nothing to copy next to this YAML):
 #   bus_climate - climate entities backed by the bus state
 #   immergas_dd - shared helpers for the lambdas (HA/bus arbitration, fault texts)
-# @v1.5.0 = this release; @main = latest development version.
+# @v1.6.0 = this release; @main = latest development version.
 
 external_components:
-  - source: github://jotuera/immergas-magis-pro-combo-dd-modbus@v1.5.0
+  - source: github://jotuera/immergas-magis-pro-combo-dd-modbus@v1.6.0
     components: [bus_climate, immergas_dd]
     refresh: 1d
 

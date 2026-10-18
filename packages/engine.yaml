@@ -605,7 +605,7 @@ switch:
   # v68: "Discovery of new PDUs" removed - diagnostics belong to the sniffer (immergas-dd-sniffer v47).
   # v68: "Active commands" removed - old active write disabled since v57 (slave model).
   - platform: template
-    name: "Immergas - Emulate Modbus"
+    name: "${n_enable_replies_switch}"
     id: enable_replies_switch
     icon: mdi:lan-connect
     entity_category: diagnostic
@@ -638,7 +638,7 @@ switch:
   # a panel - never both, since one is physical). Enabling one disables the other. Default: Dominus ON,
   # Zone 1 Panel OFF. "Modbus connection" is the master gate (default ON).
   - platform: template
-    name: "Immergas - Emulate Dominus"
+    name: "${n_dd_emulate_33_switch}"
     id: dd_emulate_33_switch
     icon: mdi:robot-industrial
     entity_category: diagnostic
@@ -667,7 +667,7 @@ switch:
           ESP_LOGW("dd_mode", "Emuluj Dominus 0x33 OFF");
 
   - platform: template
-    name: "Immergas - Emulate Panel Zone 1"
+    name: "${n_dd_emulate_29_switch}"
     id: dd_emulate_29_switch
     icon: mdi:robot
     entity_category: diagnostic
@@ -709,7 +709,7 @@ interval:
             id(dd_sniff_reset_req) = false;
             id(dd_sniff_regs) = 0;
             id(dd_sniff_changes) = 0;
-            id(sniff_last_change).publish_state("reset - new baseline");
+            id(sniff_last_change).publish_state("${t_sniff_reset}");
             ESP_LOGI("sniff", "RESET sniffer map");
           }
 
@@ -1483,6 +1483,13 @@ interval:
               struct SniffSens { uint8_t addr; char kind; uint16_t reg; sensor::Sensor *s; float scale; int last; bool seen; };
               static SniffSens tbl[] = {
                 {0x29, 'W', 3003, id(sniff_29_w_3003), 0.1f, 0, false},
+                {0x29, 'R', 0, id(sniff_29_r_0), 1.0f, 0, false},
+                {0x29, 'R', 1, id(sniff_29_r_1), 1.0f, 0, false},
+                {0x29, 'R', 2103, id(sniff_29_r_2103), 1.0f, 0, false},
+                {0x33, 'W', 2012, id(sniff_33_w_2012), 1.0f, 0, false},
+                {0x1E, 'I', 15, id(sniff_1e_i_15), 1.0f, 0, false},
+                {0x1E, 'I', 20, id(sniff_1e_i_20), 1.0f, 0, false},
+                {0x1E, 'W', 5, id(sniff_1e_w_5), 1.0f, 0, false},
                 {0x29, 'W', 3011, id(sniff_29_w_3011), 0.1f, 0, false},
                 {0x29, 'W', 3012, id(sniff_29_w_3012), 0.1f, 0, false},
                 {0x29, 'W', 3013, id(sniff_29_w_3013), 0.1f, 0, false},
@@ -1522,7 +1529,7 @@ interval:
                       e.last = value; e.seen = true;
                       const char *st = nullptr;
                       if (e.map == 0) st = (value == 0) ? "RPT" : (value == 1) ? "RT" : (value == 2) ? "RP" : nullptr;
-                      else st = (value == 4) ? "Manual" : (value == 64) ? "Auto (comfort)" : (value == 128) ? "Auto (economy)" : nullptr;
+                      else st = (value == 4) ? "${t_prog_manual}" : (value == 64) ? "${t_prog_comfort}" : (value == 128) ? "${t_prog_eco}" : nullptr;
                       char sb[24];
                       if (st == nullptr) { snprintf(sb, sizeof(sb), "Code %d", value); st = sb; }
                       e.t->publish_state(st);
@@ -1545,6 +1552,10 @@ interval:
                 }
                 if (kind == 'W' && reg == 6102 && value >= 0 && value <= 2 && value != id(panel_a31_raw)) {
                   id(panel_a31_raw) = value;  // A31 belongs to the boiler - remember it to echo back
+                }
+                if (kind == 'W' && reg == 6150) {  // heat-pump module present (A11 != OFF)
+                  static int last6150 = -99999;
+                  if (value != last6150) { last6150 = value; id(piec_modul_pc_obecny).publish_state(value != 0); }
                 }
                 if (kind == 'W' && reg == 2001) {
                   static int last2001 = -99999;
@@ -1579,7 +1590,7 @@ interval:
                   static int last19 = -99999;
                   if (value != last19) {
                     last19 = value;
-                    const char *st = (value == 1) ? "Standby" : (value == 2) ? "Starting" : (value == 3) ? "Running" : nullptr;
+                    const char *st = (value == 1) ? "${t_stage_standby}" : (value == 2) ? "${t_stage_starting}" : (value == 3) ? "${t_stage_running}" : nullptr;
                     char sb[24];
                     if (st == nullptr) { snprintf(sb, sizeof(sb), "Code %d", value); st = sb; }
                     id(pc_etap_pracy).publish_state(st);
@@ -1670,7 +1681,7 @@ interval:
               return;
             }
 
-            // v101: "Panel" source (slot 1) for Zone 2/3 = real temp/humidity PDU of the physical panel
+            // v101: "${t_src_panel}" source (slot 1) for Zone 2/3 = real temp/humidity PDU of the physical panel
             // 0x2A/0x2B (when connected and transmitting). Feeds the slot-1 buffer; when Panel selected (idx==1) -> to output.
             if (addr == 0x2A || addr == 0x2B) {
               bool z2 = (addr == 0x2A);
@@ -1702,10 +1713,10 @@ interval:
               }
 
               const char *mode_name = "Nieznany";
-              if (value == 0) mode_name = "Standby";
-              else if (value == 1) mode_name = "Summer DHW";
-              else if (value == 2) mode_name = "Cooling";
-              else if (value == 3) mode_name = "Winter CH+DHW";
+              if (value == 0) mode_name = "${t_mode_standby}";
+              else if (value == 1) mode_name = "${t_mode_summer}";
+              else if (value == 2) mode_name = "${t_mode_cooling}";
+              else if (value == 3) mode_name = "${t_mode_winter}";
 
               ESP_LOGI("dd_value", "%s Tryb pracy addr=0x%02X PDU 2000 = %d / %s", source, addr, value, mode_name);
               return;
@@ -1722,13 +1733,13 @@ interval:
               }
               id(zone1_temp_raw) = value;
               id(zone1_temp_sensor).publish_state(value / 10.0f);
-              id(ha_temp_raw_1) = value;  // v101: "Panel" source = real PDU 2005 of the physical panel 0x29
+              id(ha_temp_raw_1) = value;  // v101: "${t_src_panel}" source = real PDU 2005 of the physical panel 0x29
               if (id(temp_src_idx) == 1) id(ha_room_temp_raw) = value;
               ESP_LOGI("dd_value", "%s addr=0x29 Zone1 temp PDU %u = %d / %.1f°C", source, reg, value, value / 10.0f);
               return;
             }
 
-            if (reg == REG_ZONE1_TEMP_OLD && addr != 0x2A && addr != 0x2B) {  // v103: temp 0x2A/0x2B -> blok "Panel" wyzej
+            if (reg == REG_ZONE1_TEMP_OLD && addr != 0x2A && addr != 0x2B) {  // v103: temp 0x2A/0x2B -> blok "${t_src_panel}" wyzej
               if (!valid_temp_x10(value)) return;
               id(zone1_temp_raw) = value;
               id(zone1_temp_sensor).publish_state(value / 10.0f);
@@ -1846,7 +1857,7 @@ interval:
             if (addr == 0x29 && reg == 2006) {
               id(pdu_29_2006_raw) = value;
               id(sensor_zone1_humidity).publish_state(value);
-              id(ha_hum_raw_1) = value;  // v101: "Panel" source = real PDU 2006 of the physical panel 0x29
+              id(ha_hum_raw_1) = value;  // v101: "${t_src_panel}" source = real PDU 2006 of the physical panel 0x29
               if (id(hum_src_idx) == 1) id(ha_room_humidity_raw) = value;
               ESP_LOGI("dd_value", "%s Wilgotność Strefy 1 PDU 2006 = %d%%", source, value);
               return;

@@ -6,16 +6,17 @@
 select:
   # Language of the fault texts (description + "no fault" code). Restored across reboots.
   - platform: template
-    name: "Immergas - Fault language"
+    name: "${n_fault_lang}"
     id: fault_lang
     icon: mdi:translate
     entity_category: config
     optimistic: true
     restore_value: true
-    initial_option: "English"
+    initial_option: "${fault_language}"  # default from the language file
     options:
       - "English"
       - "Italiano"
+      - "Polski"
     on_value:
       - component.update: dd_error_text
       - component.update: dd_error_code_text
@@ -23,7 +24,7 @@ select:
 sensor:
   # 3003 = heating-curve flow setpoint (0 without demand)
   - platform: template
-    name: "Immergas - D04 Calculated flow setpoint"
+    name: "${n_sniff_29_w_3003}"
     id: sniff_29_w_3003
     icon: mdi:thermometer
     device_class: temperature
@@ -33,7 +34,7 @@ sensor:
     update_interval: never
   # 3011 = main generator (heat pump) flow
   - platform: template
-    name: "Immergas - D20 Main generator flow temperature"
+    name: "${n_sniff_29_w_3011}"
     id: sniff_29_w_3011
     icon: mdi:thermometer
     device_class: temperature
@@ -43,7 +44,7 @@ sensor:
     update_interval: never
   # 3012 = main generator (heat pump) return
   - platform: template
-    name: "Immergas - D08 Main generator return temperature"
+    name: "${n_sniff_29_w_3012}"
     id: sniff_29_w_3012
     icon: mdi:thermometer
     device_class: temperature
@@ -53,7 +54,7 @@ sensor:
     update_interval: never
   # 3013 = secondary generator (gas boiler) flow ("Flow temp. 2")
   - platform: template
-    name: "Immergas - D01 Secondary generator flow temperature"
+    name: "${n_sniff_29_w_3013}"
     id: sniff_29_w_3013
     icon: mdi:thermometer
     device_class: temperature
@@ -63,7 +64,7 @@ sensor:
     update_interval: never
   # 3014 = secondary generator return ("Return temp. 2")
   - platform: template
-    name: "Immergas - Secondary generator return temperature"
+    name: "${n_sniff_29_w_3014}"
     id: sniff_29_w_3014
     icon: mdi:thermometer
     device_class: temperature
@@ -72,7 +73,7 @@ sensor:
     accuracy_decimals: 1
     update_interval: never
   - platform: template
-    name: "Immergas - A13 Number of zones"
+    name: "${n_sniff_33_w_4199}"
     id: sniff_33_w_4199
     icon: mdi:numeric
     entity_category: diagnostic
@@ -81,7 +82,7 @@ sensor:
     update_interval: never
 
   - platform: template
-    name: "Immergas - D06 External ambient temperature"
+    name: "${n_outside_temp_sensor}"
     id: outside_temp_sensor
     icon: mdi:thermometer
     unit_of_measurement: "°C"
@@ -94,7 +95,7 @@ sensor:
     update_interval: 5s
 
   - platform: template
-    name: "Immergas - D91 Boiler firmware version"
+    name: "${n_sensor_pdu_29_3031_version}"
     id: sensor_pdu_29_3031_version
     icon: mdi:chip
     entity_category: diagnostic
@@ -105,7 +106,7 @@ sensor:
     update_interval: 30s
 
   - platform: template
-    name: "Immergas - Panel firmware version Zone 1"
+    name: "${n_sensor_pdu_29_3042_version}"
     id: sensor_pdu_29_3042_version
     icon: mdi:monitor-dashboard
     entity_category: diagnostic
@@ -117,20 +118,20 @@ sensor:
 
 text_sensor:
   - platform: template
-    name: "Immergas - D140-D142 Boiler clock"
+    name: "${n_sniff_clock_2300}"
     id: sniff_clock_2300
     icon: mdi:clock-outline
     update_interval: never
   # v91: boiler fault code as "E<code>" (e.g. E142) instead of the raw number (142.0). "None" when 0.
   - platform: template
-    name: "Immergas - Boiler fault (code)"
+    name: "${n_dd_error_code_text}"
     id: dd_error_code_text
     icon: mdi:alert-circle
     entity_category: diagnostic
     update_interval: 10s
     lambda: |-
       int c = id(dd_err_code);
-      if (c == 0) return std::string(id(fault_lang).active_index().value_or(0) == 1 ? "Nessuna" : "None");
+      if (c == 0) return std::string(faults::no_fault_code(id(fault_lang).active_index().value_or(0)));
       char b[8];
       snprintf(b, sizeof(b), "E%02d", c);
       return std::string(b);
@@ -139,18 +140,17 @@ text_sensor:
   # language"). State = 'title. description -> action', fitted to HA's 255-char limit by shortening the
   # description, so title and action survive (faults_i18n.h).
   - platform: template
-    name: "Immergas - Boiler fault (description)"
+    name: "${n_dd_error_text}"
     id: dd_error_text
     icon: mdi:alert-circle-outline
     entity_category: diagnostic
     update_interval: 10s
     lambda: |-
-      bool italian = id(fault_lang).active_index().value_or(0) == 1;
-      return faults::describe(id(dd_err_code), italian);
+      return faults::describe(id(dd_err_code), id(fault_lang).active_index().value_or(0));
 
   # v106: removed the "Atom operating mode" entity (diagnostic emulation-mode text - unnecessary).
   - platform: template
-    name: "Immergas - Controller internal date"
+    name: "${n_controller_date_text}"
     id: controller_date_text
     icon: mdi:calendar-clock
     entity_category: diagnostic
@@ -170,18 +170,24 @@ text_sensor:
 # within the last 30 s = it accepted us. When it stops reading (or emulation is off) -> offline.
 
 binary_sensor:
+  # 0x29 W 6150 = heat-pump module present (0 with A11 = OFF; the boiler then stops polling 0x1E)
+  - platform: template
+    name: "${n_piec_modul_pc_obecny}"
+    id: piec_modul_pc_obecny
+    icon: mdi:heat-pump-outline
+    entity_category: diagnostic
   # v1.3.0: 0x29 W 2001 status flags (bit 0 = DHW request pending, bit 2 = active boiler fault/anomaly)
   - platform: template
-    name: "Immergas - D09 DHW request pending"
+    name: "${n_piec_zadanie_cwu_oczek}"
     id: piec_zadanie_cwu_oczek
     icon: mdi:water-boiler-alert
   - platform: template
-    name: "Immergas - Boiler fault active (2001)"
+    name: "${n_piec_blad_aktywny_2001}"
     id: piec_blad_aktywny_2001
     device_class: problem
   # v71: boiler fault flag = PDU 2100 != 0; reset available = PDU 2101 LB bit1 (per Dominus config).
   - platform: template
-    name: "Immergas - Boiler fault active"
+    name: "${n_dd_error_active}"
     id: dd_error_active
     device_class: problem
     entity_category: diagnostic
