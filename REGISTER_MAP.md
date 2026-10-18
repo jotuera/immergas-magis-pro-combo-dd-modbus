@@ -67,7 +67,7 @@ Verified on **three buses** (D+/D-, T-/T+, NASA) at standby and during a forced 
 | 2100 | Fault code (0 = none, e.g. 142 = Dominus missing) | — | enum | CONFIRMED |
 | 2218 / 2219 | Zone max / offset (copies) | — | ×0.1 °C | CONFIRMED |
 | 2293 | DHW temperature (copy) | — | ×0.1 °C | CONFIRMED |
-| **2300** | **Boiler clock**: [day of week 3 b][hour 5 b][minute 8 b], 1 = Mon … 7 = Sun; the boiler runs on CET (no DST) | **D140/D141/D142** | — | CONFIRMED |
+| **2300** | **Boiler clock**: [day of week 3 b][hour 5 b][minute 8 b], 1 = Mon … 7 = Sun. Set with U21–U26 on the boiler. On fw 5.03 the clock follows DST (0 min drift vs local time, reported in PR #1); an earlier "CET, no DST" note was based on a boiler clock that had simply been set wrong | **D140/D141/D142** | — | CONFIRMED |
 | **2302** | **Date**: high byte = day, low byte = month | **D143/D144** | — | CONFIRMED |
 | **2303** | **Year** | **D145** | — | CONFIRMED |
 | **3002** | Outdoor temperature **after the P07 probe correction** (P07 = +5 K → 3002 jumped 10.5 → 15.5 while the raw 0x1E I5 stayed) | D06 | ×0.1 °C | CONFIRMED |

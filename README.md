@@ -6,10 +6,23 @@ The boiler is the Modbus **master**; this device is a **slave** that answers as 
 
 > ⚠️ **Tested only on the Magis Combo V2 (`MPROCOMBOV2`).** The Dominus app supports many Immergas engines (Zeus, Star, VictrixMaior, …) with different register maps — this project targets **Magis Combo only**. Other models may partially work but are untested. Contributions welcome.
 
+## What's new in v1.4.0
+
+Thanks to **Roberto Pegurri ([@robpegurri](https://github.com/robpegurri))** for [PR #1](https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus/pull/1), tested on a Magis Combo V2 with a physical zone panel + emulated Dominus, and here with an emulated panel + physical Dominus.
+
+- **Fix: changes made on the physical panel were reverted.** The boiler propagates them to the Dominus with FC16 writes, which the emulator dropped. Schedule changes seen on the bus now also update the HA schedule entities.
+- **Bus / HA arbitration** for setpoints, offset, Comfort/Eco levels, humidity, Set Flow, DHW setpoint and mode: range checks, a warm-up after the panel reconnects (no more DHW 10 °C / offset 0 after a panel power cut), HA commands held until the boiler confirms them. The v1.2.0 anti-legionella fix is kept.
+- **RS485 direction (DE) driven by the UART hardware** (`flow_control_pin`): no busy-wait after every reply, roughly half the loop time, 0 CRC errors.
+- **Climates backed by the bus**: state, action and presets come from what the boiler reports. ⚠️ **Breaking:** the old `Dom` preset is gone; presets are **Comfort / Eco** (Manual = no preset).
+- **Fault texts in English or Italian** ("Fault language" select).
+- **Diagnostics**: uptime, Wi-Fi signal, loop time, free heap, reset reason, RS485 CRC errors, Dominus TX frames, boiler clock drift vs HA, system flow / return / ΔT, Zone 1 heating request.
+- **Only one file to install.** The project's components (`bus_climate`, `immergas_dd`) are fetched from this repo by `external_components`; nothing has to be copied next to the YAML.
+- Small fixes: integer sensors show `1` instead of `1.0`; `HP Night function (U11)` renamed **`HP U11 Night function`** (new entity in HA); `Zone 1 heating request` shows on/off.
+
 ## What's new in v1.3.1
 
 - **Night function (boiler parameter U11)** decoded across three buses. Inside the U12–U13 window the boiler writes a compressor capacity limit in % to the outdoor-unit interface board (`0x1E` reg `2`, **30** = night function; the MIM echoes it in input reg `12`). The Samsung outdoor unit then caps the compressor at ~19 Hz instead of 64 Hz (NASA `0x8239`).
-- New read-only entities: **HP Night function (U11)** and **HP Compressor capacity limit** (%, 100 = no limit). They show when the limit is actually active, not just whether U11 is enabled.
+- New read-only entities: **HP U11 Night function** (named *HP Night function (U11)* in v1.3.1) and **HP Compressor capacity limit** (%, 100 = no limit). They show when the limit is actually active, not just whether U11 is enabled.
 - The night function **cannot be switched from Home Assistant**: only the boiler writes it, and this device never transmits to `0x1E`. Set U11 / U12 / U13 in the boiler menu.
 - `Boiler firmware version` renamed to **`D91 Boiler firmware version`** (same value as D91 on the T-/T+ BMS bus).
 
@@ -122,7 +135,7 @@ Edit the `substitutions:` block at the top of the YAML — these point to **your
 
 ## Setup
 
-1. Copy `immergas-magis-pro-combo-dd-modbus.yaml` together with `lww_guard.h`, `faults_i18n.h` and the `components/` folder into the same ESPHome config folder (the YAML includes them).
+1. Copy `immergas-magis-pro-combo-dd-modbus.yaml` into your ESPHome config folder. The components are downloaded from GitHub (`external_components: github://jotuera/immergas-magis-pro-combo-dd-modbus@v1.4.0`); change the tag to upgrade, or use `@main` for the development version.
 1. `cp secrets.yaml.example secrets.yaml` and fill in WiFi + web UI credentials.
 2. Point the `substitutions:` sources to your HA sensors (see above).
 3. Flash `immergas-magis-pro-combo-dd-modbus.yaml` with ESPHome, wire the RS485 (with the **120 Ω** resistor), adopt in Home Assistant.

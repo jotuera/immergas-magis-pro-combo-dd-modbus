@@ -6,12 +6,26 @@
 # setpoints, weekly schedules, operating mode and boiler faults. See README.md for wiring, the register
 # map and setup.
 #
-# Project : jotuera.immergas-magis-pro-combo-dd-modbus  |  v1.3.1
+# Project : jotuera.immergas-magis-pro-combo-dd-modbus  |  v1.4.0
 # Repo    : https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus
 # License : MIT (c) 2026 JoTu
 # Tested  : Magis Combo V2 (MPROCOMBOV2). Other Immergas engines use different register maps - untested.
 #
 # Changelog:
+#   v1.4.0 - PR #1 by Roberto Pegurri (@robpegurri), tested on Magis Combo V2 with a physical panel + emulated Dominus
+#            and here with an emulated panel + physical Dominus:
+#            FIX: FC16 writes from the boiler to the emulated Dominus were dropped (panel changes were reverted);
+#            schedule changes seen on the bus now update the HA entities. Bus/HA arbitration (range check, panel
+#            warm-up, pending HA commands, settle window) replaces the v117 last-writer-wins; the v1.2.0
+#            anti-legionella fix is kept. RS485 DE driven by the UART hardware (flow_control_pin), no busy-wait.
+#            Climates backed by the bus (bus_climate) replace thermostat + the v118 sync loop - BREAKING: the
+#            "Dom" preset is gone, presets are Comfort / Eco (from the boiler phase). Fault texts in English or
+#            Italian ("Fault language"). Diagnostics: uptime, WiFi, loop time, free heap, reset reason, RS485 CRC
+#            errors, Dominus TX frames, boiler clock drift, system flow/return/delta T, Zone 1 heating request.
+#            Setpoint step 0.1 C. Logger INFO.
+#            Packaging: the components and headers are fetched from GitHub (external_components) - only this YAML
+#            goes into ESPHome. Small fixes: integer sensors show "1" instead of "1.0" (state_class), "HP Night
+#            function (U11)" renamed "HP U11 Night function", "Zone 1 heating request" shows on/off (no "hot").
 #   v1.3.1 - NEW: night function (boiler parameter U11). Inside the U12-U13 window the boiler writes a compressor
 #            capacity limit in % to the outdoor-unit interface board (0x1E reg 2, 30 = night function; the MIM echoes
 #            it in input reg 12). Read-only entities: "HP Night function (U11)" and "HP Compressor capacity limit" (%,
@@ -79,14 +93,10 @@ substitutions:
   # v110: project metadata (author / GitHub repo). After publishing, set the correct repo URL.
   author: "JoTu"
   github_url: "https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus"
-  project_version: "1.3.1"
+  project_version: "1.4.0"
 
 esphome:
   name: immergas-dd-atom
-  # Bus/HA arbitration for the registers the emulated Dominus serves (file next to this YAML).
-  includes:
-    - lww_guard.h
-    - faults_i18n.h   # fault descriptions EN/IT (language chosen with the "Fault language" select)
   friendly_name: Immergas D+D- Atom
   comment: "Immergas Dominus/Panel (D+/D-) emulator | author: ${author} | ${github_url}"
   project:
@@ -99,12 +109,16 @@ esphome:
           // RS485 DE (GPIO23) is driven by the UART hardware (uart: flow_control_pin), not from here.
           ESP_LOGW("dd_rs485", "RS485 hardware DE on GPIO23; Dominus 0x33 + panels + thermostats + chrono + faults + status ready, fw ${project_version}");
 
-# Bus-backed climate entities (components/bus_climate next to this YAML).
+# Components of this project, downloaded from GitHub (nothing to copy next to this YAML):
+#   bus_climate - climate entities backed by the bus state
+#   immergas_dd - shared helpers for the lambdas (HA/bus arbitration, fault texts)
+# @v1.4.0 = this release; @main = latest development version.
 external_components:
-  - source:
-      type: local
-      path: components
-    components: [bus_climate]
+  - source: github://jotuera/immergas-magis-pro-combo-dd-modbus@v1.4.0
+    components: [bus_climate, immergas_dd]
+    refresh: 1d
+
+immergas_dd:
 
 esp32:
   board: m5stack-atom
@@ -2476,6 +2490,7 @@ sensor:
     id: sniff_regs_sensor
     icon: mdi:counter
     entity_category: diagnostic
+    state_class: measurement  # integer: HA shows "1", not "1.0"
     accuracy_decimals: 0
     update_interval: 10s
     lambda: |-
@@ -2485,6 +2500,7 @@ sensor:
     id: sniff_changes_sensor
     icon: mdi:counter
     entity_category: diagnostic
+    state_class: measurement  # integer: HA shows "1", not "1.0"
     accuracy_decimals: 0
     update_interval: 10s
     lambda: |-
@@ -2660,6 +2676,7 @@ sensor:
     id: sniff_33_w_4199
     icon: mdi:numeric
     entity_category: diagnostic
+    state_class: measurement  # integer: HA shows "1", not "1.0"
     accuracy_decimals: 0
     update_interval: never
 
@@ -3337,7 +3354,7 @@ binary_sensor:
   - platform: template
     name: "Immergas - Zone 1 heating request"
     id: bs_zone1_heat_request
-    device_class: heat
+    icon: mdi:fire  # no device_class heat: HA would show "hot"/"normal" instead of on/off
     lambda: |-
       return (id(dd_zone1_status_raw) & 0x08) != 0;
   # v1.3.0: 0x29 W 2001 status flags (bit 0 = DHW request pending, bit 2 = active boiler fault/anomaly)
@@ -3356,7 +3373,7 @@ binary_sensor:
     icon: mdi:power
   # v1.3.1: night function U11 active (0x1E input 12 != 0) - compressor limited inside the U12-U13 window
   - platform: template
-    name: "Immergas - HP Night function (U11)"
+    name: "Immergas - HP U11 Night function"
     id: pc_funkcja_nocna
     icon: mdi:weather-night
   - platform: template
