@@ -6,6 +6,13 @@ The boiler is the Modbus **master**; this device is a **slave** that answers as 
 
 > ⚠️ **Tested only on the Magis Combo V2 (`MPROCOMBOV2`).** The Dominus app supports many Immergas engines (Zeus, Star, VictrixMaior, …) with different register maps — this project targets **Magis Combo only**. Other models may partially work but are untested. Contributions welcome.
 
+## What's new in v1.5.0
+
+- **The configuration is split into packages** (`packages/*.yaml`: core, engine, zone1, zones23, dhw, dominus, schedules, heat_pump, boiler_info, diagnostics). Your YAML is now ~100 lines: device name, Wi-Fi, credentials, temperature sources and a `packages:` block that downloads the rest from this repo. The resolved configuration is **identical to v1.4.0** (checked with `esphome config`), so nothing changes on the device or in Home Assistant.
+- RS485 pins are substitutions (`uart_tx_pin`, `uart_rx_pin`, `uart_de_pin`).
+- The changelog moved to [CHANGELOG.md](CHANGELOG.md).
+- Prepares translations of the entity names (next release).
+
 ## What's new in v1.4.0
 
 Thanks to **Roberto Pegurri ([@robpegurri](https://github.com/robpegurri))** for [PR #1](https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus/pull/1), tested on a Magis Combo V2 with a physical zone panel + emulated Dominus, and here with an emulated panel + physical Dominus.
@@ -131,11 +138,12 @@ Edit the `substitutions:` block at the top of the YAML — these point to **your
 
 - `temp_src_*` / `hum_src_*` — Zone 1 temperature/humidity sources (slots 2–5; slot 1 "Panel" = live bus value).
 - `temp_src_z2_*` / `hum_src_z2_*`, `temp_src_z3_*` / `hum_src_z3_*` — Zone 2 / 3 sources.
-- `author`, `github_url`, `project_version` — project metadata (shown as device info).
+- `uart_tx_pin`, `uart_rx_pin`, `uart_de_pin` — RS485 pins (defaults GPIO26 / GPIO32 / GPIO23 for the M5Stack Atom); add them only if your wiring differs.
+- Any other value of the packages can be overridden the same way (e.g. a single entity name in a later release).
 
 ## Setup
 
-1. Copy `immergas-magis-pro-combo-dd-modbus.yaml` into your ESPHome config folder. The components are downloaded from GitHub (`external_components: github://jotuera/immergas-magis-pro-combo-dd-modbus@v1.4.0`); change the tag to upgrade, or use `@main` for the development version.
+1. Copy `immergas-magis-pro-combo-dd-modbus.yaml` into your ESPHome config folder. Everything else (the `packages/*.yaml` files and the `bus_climate` / `immergas_dd` components) is downloaded from GitHub. To upgrade, change `ref:` in the `packages:` block (or use `main` for the development version). Keep the list of package files complete: the packages depend on each other.
 1. `cp secrets.yaml.example secrets.yaml` and fill in WiFi + web UI credentials.
 2. Point the `substitutions:` sources to your HA sensors (see above).
 3. Flash `immergas-magis-pro-combo-dd-modbus.yaml` with ESPHome, wire the RS485 (with the **120 Ω** resistor), adopt in Home Assistant.

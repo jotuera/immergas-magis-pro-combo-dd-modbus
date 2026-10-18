@@ -1,0 +1,194 @@
+# Immergas Magis Pro / Combo D+/D- emulator - package "diagnostics"
+# Diagnostics: bus sniffer, device health (uptime, Wi-Fi, loop time, heap, reset reason), RS485 CRC errors,
+# Dominus TX frames, clock drift, link status, project metadata.
+# Part of jotuera/immergas-magis-pro-combo-dd-modbus (MIT). Loaded by the main YAML through `packages:`.
+
+switch:
+  # v1.2.0: bus sniffer - logs (tag "sniff") every NEW/CHANGED register value on D+/D-. Diagnostic, OFF by default.
+  - platform: template
+    name: "Immergas - Bus sniffer"
+    id: sniff_switch
+    icon: mdi:radar
+    entity_category: diagnostic
+    restore_mode: RESTORE_DEFAULT_OFF
+    lambda: |-
+      return id(dd_sniff_enabled);
+    turn_on_action:
+      - lambda: |-
+          id(dd_sniff_enabled) = true;
+    turn_off_action:
+      - lambda: |-
+          id(dd_sniff_enabled) = false;
+
+button:
+  - platform: template
+    name: "Immergas - Bus sniffer reset"
+    id: sniff_reset_button
+    icon: mdi:restart
+    entity_category: diagnostic
+    on_press:
+      - lambda: |-
+          id(dd_sniff_reset_req) = true;
+
+sensor:
+
+  # v1.2.0 bus sniffer counters
+  - platform: template
+    name: "Immergas - Bus sniffer registers"
+    id: sniff_regs_sensor
+    icon: mdi:counter
+    entity_category: diagnostic
+    state_class: measurement  # integer: HA shows "1", not "1.0"
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(dd_sniff_regs);
+  - platform: template
+    name: "Immergas - Bus sniffer changes"
+    id: sniff_changes_sensor
+    icon: mdi:counter
+    entity_category: diagnostic
+    state_class: measurement  # integer: HA shows "1", not "1.0"
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      return id(dd_sniff_changes);
+
+  # v1.2.0 boiler -> panel block (0x29) = zone-panel "Information" menu 1:1 (all x0.1 C, published from handle_pdu)
+  # Device and bus health. Uptime drop = reboot; Loop time spikes = main loop blocked; CRC/TX counters: watch them
+  # after any change to the RS485 path.
+  - platform: uptime
+    name: "Immergas - Uptime"
+    entity_category: diagnostic
+    update_interval: 10s
+  - platform: wifi_signal
+    name: "Immergas - WiFi signal"
+    entity_category: diagnostic
+    update_interval: 30s
+  - platform: debug
+    loop_time:
+      name: "Immergas - Loop time"
+      entity_category: diagnostic
+    free:
+      name: "Immergas - Free heap"
+      entity_category: diagnostic
+  - platform: template
+    name: "Immergas - RS485 CRC errors"
+    id: dd_crc_bad_sensor
+    icon: mdi:alert-octagon-outline
+    entity_category: diagnostic
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: |-
+      return (float) id(dd_crc_bad_count);
+  - platform: template
+    name: "Immergas - Dominus TX frames"
+    id: dd_emu33_tx_sensor
+    icon: mdi:upload-network-outline
+    entity_category: diagnostic
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: |-
+      return (float) id(dd_emu_33_ack_count);
+  # Boiler clock (PDU 2300: bits 15-13 weekday 1 = Mon .. 7 = Sun, 12-8 hour, 7-0 minute) minus HA local time,
+  # in minutes (+ ahead / - behind). The zone schedules run on the boiler clock. Resolution 1 min.
+  # Magis Combo V2 fw 5.03 + physical panel: 0 min on 11/10/2026 (summer time), i.e. that clock follows DST.
+  - platform: template
+    name: "Immergas - Boiler clock drift"
+    id: controller_clock_drift
+    icon: mdi:clock-alert-outline
+    entity_category: diagnostic
+    unit_of_measurement: "min"
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: |-
+      uint16_t r = (uint16_t) id(pdu_29_2300_raw);
+      auto now = id(ha_time).now();
+      int wd = (r >> 13) & 0x07, hh = (r >> 8) & 0x1F, mm = r & 0xFF;
+      if (r == 0 || !now.is_valid() || wd < 1 || hh > 23 || mm > 59) return NAN;
+      int boiler = (wd - 1) * 1440 + hh * 60 + mm;                                    // minutes since Monday 00:00
+      int local = ((now.day_of_week + 5) % 7) * 1440 + now.hour * 60 + now.minute;  // ESPTime: 1 = Sunday
+      int d = boiler - local;
+      if (d > 5040) d -= 10080;
+      if (d < -5040) d += 10080;
+      return (float) d;
+
+text_sensor:
+  - platform: debug
+    reset_reason:
+      name: "Immergas - Reset reason"
+      entity_category: diagnostic
+
+  # v1.2.0
+  - platform: template
+    name: "Immergas - Bus sniffer last change"
+    id: sniff_last_change
+    icon: mdi:radar
+    entity_category: diagnostic
+    update_interval: never
+  # v110: metadane projektu (autor + repozytorium GitHub) - widoczne jako encje diagnostyczne urzadzenia.
+  - platform: template
+    name: "Immergas - Author"
+    id: meta_author
+    icon: mdi:account
+    entity_category: diagnostic
+    update_interval: 3600s
+    lambda: |-
+      return std::string("${author}");
+  - platform: template
+    name: "Immergas - GitHub"
+    id: meta_github
+    icon: mdi:github
+    entity_category: diagnostic
+    update_interval: 3600s
+    lambda: |-
+      return std::string("${github_url}");
+  - platform: template
+    name: "Immergas - Project version"
+    id: meta_version
+    icon: mdi:tag-outline
+    entity_category: diagnostic
+    update_interval: 3600s
+    lambda: |-
+      return std::string("${project_version}");
+
+binary_sensor:
+  - platform: template
+    name: "Immergas - Connection Dominus"
+    id: bs_dominus_online
+    device_class: connectivity
+    entity_category: diagnostic
+    lambda: |-
+      if (id(dd_last_33_read_ms) == 0) return false;
+      return (millis() - id(dd_last_33_read_ms)) < 30000;
+
+  - platform: template
+    name: "Immergas - Connection Panel Zone 1"
+    id: bs_panel_online
+    device_class: connectivity
+    entity_category: diagnostic
+    lambda: |-
+      if (id(dd_last_29_read_ms) == 0) return false;
+      return (millis() - id(dd_last_29_read_ms)) < 30000;
+
+  - platform: template
+    name: "Immergas - Connection Modbus"
+    id: bs_modbus_online
+    device_class: connectivity
+    entity_category: diagnostic
+    lambda: |-
+      if (!id(dd_enable_replies)) return false;  // v95: Modbus connection OFF -> disconnected
+      if (id(dd_last_1e_read_ms) == 0) return false;
+      return (millis() - id(dd_last_1e_read_ms)) < 30000;
+
+# Climate entities backed by the bus (components/bus_climate). The boiler does the real regulation: state is
+# what the boiler reports (setpoint 2015, mode 2000, phase/request 2010), there is no local control loop.
+# Commands from HA go through the existing number/select entities, i.e. the same write path as the sliders.
+# Replaces the v65 "thermostat" climates and the v118 1 s delta-sync loop: a thermostat platform keeps its own
+# target and runs its own heat/idle logic, so it could disagree with the boiler and needed a sync loop.
+# Presets: Comfort/Eco from the phase the boiler declares in 2010 (bit6 Comfort, bit7 Eco, bit2 Manual).
+# Manual (temporary override, not tied to a Comfort/Eco level) = HA "no preset" (NONE).
+# Choosing Comfort/Eco writes the matching level (heat or cool, by mode) into the zone setpoint: during an Eco
+# time slot, Comfort makes the boiler switch to Manual - that is the boiler's behaviour, shown as is.

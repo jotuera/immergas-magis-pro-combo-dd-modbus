@@ -1,0 +1,765 @@
+# Immergas Magis Pro / Combo D+/D- emulator - package "schedules"
+# Weekly schedules: calendars 1-4 (4 ranges each) and day -> calendar for zones 1-3 and DHW.
+# Part of jotuera/immergas-magis-pro-combo-dd-modbus (MIT). Loaded by the main YAML through `packages:`.
+
+datetime:
+  # v70: Zone 1 schedule - 4 daily profiles (cal1-4), each with 4 ranges (start/end).
+  # Read by the emulator on 0x33/0x29 (registers 2310-2347). HH:MM time-picker in HA.
+  # optimistic+restore: state kept locally (flash), no time source needed.
+  - platform: template
+    name: "Immergas - Cal. 1 Range 1 ON"
+    id: dt_cal1_f1_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "06:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 1 Range 1 OFF"
+    id: dt_cal1_f1_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "09:30:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 1 Range 2 ON"
+    id: dt_cal1_f2_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "09:30:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 1 Range 2 OFF"
+    id: dt_cal1_f2_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 1 Range 3 ON"
+    id: dt_cal1_f3_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 1 Range 3 OFF"
+    id: dt_cal1_f3_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:59:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 1 Range 4 ON"
+    id: dt_cal1_f4_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "00:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 1 Range 4 OFF"
+    id: dt_cal1_f4_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "06:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 2 Range 1 ON"
+    id: dt_cal2_f1_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "06:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 2 Range 1 OFF"
+    id: dt_cal2_f1_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "12:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 2 Range 2 ON"
+    id: dt_cal2_f2_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "15:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 2 Range 2 OFF"
+    id: dt_cal2_f2_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 2 Range 3 ON"
+    id: dt_cal2_f3_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 2 Range 3 OFF"
+    id: dt_cal2_f3_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 2 Range 4 ON"
+    id: dt_cal2_f4_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 2 Range 4 OFF"
+    id: dt_cal2_f4_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 3 Range 1 ON"
+    id: dt_cal3_f1_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "06:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 3 Range 1 OFF"
+    id: dt_cal3_f1_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 3 Range 2 ON"
+    id: dt_cal3_f2_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 3 Range 2 OFF"
+    id: dt_cal3_f2_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 3 Range 3 ON"
+    id: dt_cal3_f3_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 3 Range 3 OFF"
+    id: dt_cal3_f3_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 3 Range 4 ON"
+    id: dt_cal3_f4_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 3 Range 4 OFF"
+    id: dt_cal3_f4_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "23:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 4 Range 1 ON"
+    id: dt_cal4_f1_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "00:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 4 Range 1 OFF"
+    id: dt_cal4_f1_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "00:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 4 Range 2 ON"
+    id: dt_cal4_f2_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "00:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 4 Range 2 OFF"
+    id: dt_cal4_f2_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "00:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 4 Range 3 ON"
+    id: dt_cal4_f3_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "00:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 4 Range 3 OFF"
+    id: dt_cal4_f3_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "00:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+  - platform: template
+    name: "Immergas - Cal. 4 Range 4 ON"
+    id: dt_cal4_f4_on
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "00:00:00"
+    entity_category: config
+    icon: mdi:clock-start
+  - platform: template
+    name: "Immergas - Cal. 4 Range 4 OFF"
+    id: dt_cal4_f4_off
+    type: time
+    optimistic: true
+    restore_value: true
+    initial_value: "00:00:00"
+    entity_category: config
+    icon: mdi:clock-end
+
+select:
+  # v70: assign a profile (Cal 1-4) to a weekday - Zone 1 (registers 2410-2416).
+  - platform: template
+    name: "Immergas - CH Schedule Monday Zone 1"
+    id: sel_weekday_1
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Tuesday Zone 1"
+    id: sel_weekday_2
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Wednesday Zone 1"
+    id: sel_weekday_3
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Thursday Zone 1"
+    id: sel_weekday_4
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Friday Zone 1"
+    id: sel_weekday_5
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Saturday Zone 1"
+    id: sel_weekday_6
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Sunday Zone 1"
+    id: sel_weekday_7
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  # v70: shortcut - set the SAME profile for all 7 days at once (per-day still works independently).
+  # "(select)" = stan neutralny, nic nie robi.
+  - platform: template
+    name: "Immergas - CH Schedule all days Zone 1"
+    id: sel_weekday_all
+    icon: mdi:calendar-multiselect
+    optimistic: true
+    entity_category: config
+    options:
+      - "(select)"
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "(select)"
+    set_action:
+      - lambda: |-
+          if (x == "(select)") return;
+          id(sel_weekday_1).make_call().set_option(x).perform();
+          id(sel_weekday_2).make_call().set_option(x).perform();
+          id(sel_weekday_3).make_call().set_option(x).perform();
+          id(sel_weekday_4).make_call().set_option(x).perform();
+          id(sel_weekday_5).make_call().set_option(x).perform();
+          id(sel_weekday_6).make_call().set_option(x).perform();
+          id(sel_weekday_7).make_call().set_option(x).perform();
+          ESP_LOGW("dd_chrono", "v70 Wszystkie dni Strefy 1 -> %s", x.c_str());
+  # v106: assign a calendar to a day - Zone 2 (0x2A, reg. 2420-2426) and Zone 3 (0x2B, 2430-2436).
+  - platform: template
+    name: "Immergas - CH Schedule Monday Zone 2"
+    id: sel_weekday_z2_1
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Tuesday Zone 2"
+    id: sel_weekday_z2_2
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Wednesday Zone 2"
+    id: sel_weekday_z2_3
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Thursday Zone 2"
+    id: sel_weekday_z2_4
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Friday Zone 2"
+    id: sel_weekday_z2_5
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Saturday Zone 2"
+    id: sel_weekday_z2_6
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Sunday Zone 2"
+    id: sel_weekday_z2_7
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule all days Zone 2"
+    id: sel_weekday_z2_all
+    icon: mdi:calendar-multiselect
+    optimistic: true
+    entity_category: config
+    options:
+      - "(select)"
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "(select)"
+    set_action:
+      - lambda: |-
+          if (x == "(select)") return;
+          id(sel_weekday_z2_1).make_call().set_option(x).perform();
+          id(sel_weekday_z2_2).make_call().set_option(x).perform();
+          id(sel_weekday_z2_3).make_call().set_option(x).perform();
+          id(sel_weekday_z2_4).make_call().set_option(x).perform();
+          id(sel_weekday_z2_5).make_call().set_option(x).perform();
+          id(sel_weekday_z2_6).make_call().set_option(x).perform();
+          id(sel_weekday_z2_7).make_call().set_option(x).perform();
+          ESP_LOGW("dd_chrono", "v106 Wszystkie dni Strefy 2 -> %s", x.c_str());
+  - platform: template
+    name: "Immergas - CH Schedule Monday Zone 3"
+    id: sel_weekday_z3_1
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Tuesday Zone 3"
+    id: sel_weekday_z3_2
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Wednesday Zone 3"
+    id: sel_weekday_z3_3
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Thursday Zone 3"
+    id: sel_weekday_z3_4
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Friday Zone 3"
+    id: sel_weekday_z3_5
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Saturday Zone 3"
+    id: sel_weekday_z3_6
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule Sunday Zone 3"
+    id: sel_weekday_z3_7
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - CH Schedule all days Zone 3"
+    id: sel_weekday_z3_all
+    icon: mdi:calendar-multiselect
+    optimistic: true
+    entity_category: config
+    options:
+      - "(select)"
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "(select)"
+    set_action:
+      - lambda: |-
+          if (x == "(select)") return;
+          id(sel_weekday_z3_1).make_call().set_option(x).perform();
+          id(sel_weekday_z3_2).make_call().set_option(x).perform();
+          id(sel_weekday_z3_3).make_call().set_option(x).perform();
+          id(sel_weekday_z3_4).make_call().set_option(x).perform();
+          id(sel_weekday_z3_5).make_call().set_option(x).perform();
+          id(sel_weekday_z3_6).make_call().set_option(x).perform();
+          id(sel_weekday_z3_7).make_call().set_option(x).perform();
+          ESP_LOGW("dd_chrono", "v106 Wszystkie dni Strefy 3 -> %s", x.c_str());
+  # v83: DHW schedule (water heating) - assign a Cal 1-4 profile to a weekday
+  # (PDU 2490-2496). The SAME cal1-4 profiles as Zone 1 (times 2310-2347), own day assignment.
+  - platform: template
+    name: "Immergas - DHW Schedule Monday"
+    id: sel_dhw_weekday_1
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - DHW Schedule Tuesday"
+    id: sel_dhw_weekday_2
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - DHW Schedule Wednesday"
+    id: sel_dhw_weekday_3
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - DHW Schedule Thursday"
+    id: sel_dhw_weekday_4
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - DHW Schedule Friday"
+    id: sel_dhw_weekday_5
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - DHW Schedule Saturday"
+    id: sel_dhw_weekday_6
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  - platform: template
+    name: "Immergas - DHW Schedule Sunday"
+    id: sel_dhw_weekday_7
+    icon: mdi:calendar-today
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    options:
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "Calendar 1"
+  # v83: shortcut - set the same profile for all 7 DHW days.
+  - platform: template
+    name: "Immergas - DHW Schedule all days"
+    id: sel_dhw_weekday_all
+    icon: mdi:calendar-multiselect
+    optimistic: true
+    entity_category: config
+    options:
+      - "(select)"
+      - "Calendar 1"
+      - "Calendar 2"
+      - "Calendar 3"
+      - "Calendar 4"
+    initial_option: "(select)"
+    set_action:
+      - lambda: |-
+          if (x == "(select)") return;
+          id(sel_dhw_weekday_1).make_call().set_option(x).perform();
+          id(sel_dhw_weekday_2).make_call().set_option(x).perform();
+          id(sel_dhw_weekday_3).make_call().set_option(x).perform();
+          id(sel_dhw_weekday_4).make_call().set_option(x).perform();
+          id(sel_dhw_weekday_5).make_call().set_option(x).perform();
+          id(sel_dhw_weekday_6).make_call().set_option(x).perform();
+          id(sel_dhw_weekday_7).make_call().set_option(x).perform();
+          ESP_LOGW("dd_chrono", "v83 CWU: wszystkie dni -> %s", x.c_str());

@@ -1,0 +1,241 @@
+# Immergas Magis Pro / Combo D+/D- emulator - package "heat_pump"
+# Heat pump via the outdoor-unit interface board (0x1E, Samsung MIM): temperatures, compressor, fan, EEV,
+# run flags, stage, firmware, night function U11, system flow/return.
+# Part of jotuera/immergas-magis-pro-combo-dd-modbus (MIT). Loaded by the main YAML through `packages:`.
+
+sensor:
+  # Space-heating/cooling flow and return = heat-pump water probes TW2/TW1 (0x1E W21/W20), published only while
+  # they measure the system circuit: winter or cooling mode, zone request (2010 bit3), no DHW request (2001 bit0,
+  # 3-way valve on the cylinder) and compressor running. Otherwise they measure the DHW circuit or stagnant water
+  # -> unknown (gap in the HA graph). TW2 verified against the boiler display D20 (Magis Combo V2, fw 5.03).
+  - platform: template
+    name: "Immergas - System flow temperature"
+    id: system_flow_temp
+    icon: mdi:thermometer-chevron-up
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      int m = id(operating_mode_reported);
+      bool space = (m == 2 || m == 3) && (id(dd_zone1_status_raw) & 0x08) != 0;
+      if (!space || id(piec_zadanie_cwu_oczek).state || !id(pc_sprezarka_pracuje).state) return NAN;
+      return id(sniff_1e_w_21).state;
+  - platform: template
+    name: "Immergas - System return temperature"
+    id: system_return_temp
+    icon: mdi:thermometer-chevron-down
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      int m = id(operating_mode_reported);
+      bool space = (m == 2 || m == 3) && (id(dd_zone1_status_raw) & 0x08) != 0;
+      if (!space || id(piec_zadanie_cwu_oczek).state || !id(pc_sprezarka_pracuje).state) return NAN;
+      return id(sniff_1e_w_20).state;
+  - platform: template
+    name: "Immergas - System delta T"
+    id: system_delta_t
+    icon: mdi:delta
+    state_class: measurement
+    unit_of_measurement: "K"
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      int m = id(operating_mode_reported);
+      bool space = (m == 2 || m == 3) && (id(dd_zone1_status_raw) & 0x08) != 0;
+      if (!space || id(piec_zadanie_cwu_oczek).state || !id(pc_sprezarka_pracuje).state) return NAN;
+      return id(sniff_1e_w_21).state - id(sniff_1e_w_20).state;  // > 0 heating, < 0 cooling
+  # v1.2.0 heat pump via the outdoor-unit interface board (0x1E, Samsung MIM). Verified on 3 buses (D+/D-, T-/T+, NASA F1/F2).
+  # 0x1E I3
+  - platform: template
+    name: "Immergas - HP D73 Compressor discharge temperature"
+    id: sniff_1e_i_3
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 0x1E I4
+  - platform: template
+    name: "Immergas - HP D74 Evaporator temperature (outdoor coil)"
+    id: sniff_1e_i_4
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 0x1E I5 (the boiler forwards it as 3002)
+  - platform: template
+    name: "Immergas - HP D79 Outdoor unit probe temperature"
+    id: sniff_1e_i_5
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 0x1E I6
+  - platform: template
+    name: "Immergas - HP D72 Compressor temperature (shell)"
+    id: sniff_1e_i_6
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 0x1E I17
+  - platform: template
+    name: "Immergas - HP Target discharge temperature"
+    id: sniff_1e_i_17
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 0x1E I10 = water target sent to the HP (= D04 on demand, 5.0 idle)
+  - platform: template
+    name: "Immergas - HP Water target temperature"
+    id: sniff_1e_i_10
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 0x1E W20 = boiler -> HP (the outdoor unit has no water probes)
+  - platform: template
+    name: "Immergas - HP D08 Water return temperature (TW1)"
+    id: sniff_1e_w_20
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 0x1E W21
+  - platform: template
+    name: "Immergas - HP D20 Water flow temperature (TW2)"
+    id: sniff_1e_w_21
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  # 0x1E W22
+  - platform: template
+    name: "Immergas - HP D24 Refrigerant liquid temperature"
+    id: sniff_1e_w_22
+    icon: mdi:thermometer
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+  - platform: template
+    name: "Immergas - HP D71 Compressor frequency"
+    id: sniff_1e_i_11
+    icon: mdi:sine-wave
+    device_class: frequency
+    state_class: measurement
+    unit_of_measurement: "Hz"
+    accuracy_decimals: 0
+    update_interval: never
+  - platform: template
+    name: "Immergas - HP D75 Compressor current"
+    id: sniff_1e_i_13
+    icon: mdi:current-ac
+    device_class: current
+    state_class: measurement
+    unit_of_measurement: "A"
+    accuracy_decimals: 1
+    update_interval: never
+  - platform: template
+    name: "Immergas - HP D76 Fan target speed"
+    id: sniff_1e_i_14
+    icon: mdi:fan
+    state_class: measurement
+    unit_of_measurement: "rpm"
+    accuracy_decimals: 0
+    update_interval: never
+  - platform: template
+    name: "Immergas - HP D77 EEV position"
+    id: sniff_1e_i_16
+    icon: mdi:valve
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: never
+  # v1.3.1: compressor capacity limit in % (0x1E input 12 = MIM echo of the boiler write to reg 2; 0 -> 100 %)
+  - platform: template
+    name: "Immergas - HP Compressor capacity limit"
+    id: sniff_1e_i_12
+    icon: mdi:speedometer-slow
+    unit_of_measurement: "%"
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: never
+
+text_sensor:
+  - platform: template
+    name: "Immergas - HP Operating stage"
+    id: pc_etap_pracy
+    icon: mdi:progress-clock
+    update_interval: never
+  - platform: template
+    name: "Immergas - HP D120-D123 Outdoor main board firmware"
+    id: pc_fw_odu_main
+    icon: mdi:chip
+    entity_category: diagnostic
+    update_interval: never
+  - platform: template
+    name: "Immergas - HP D124-D127 Interface board (MIM) firmware"
+    id: pc_fw_interface
+    icon: mdi:chip
+    entity_category: diagnostic
+    update_interval: never
+  - platform: template
+    name: "Immergas - HP D128-D131 Inverter memory version"
+    id: pc_fw_inv_mem
+    icon: mdi:chip
+    entity_category: diagnostic
+    update_interval: never
+  - platform: template
+    name: "Immergas - HP D132-D135 Inverter firmware"
+    id: pc_fw_inv_fw
+    icon: mdi:chip
+    entity_category: diagnostic
+    update_interval: never
+
+binary_sensor:
+  # v1.2.0 heat-pump run flags (0x1E, published from handle_pdu)
+  - platform: template
+    name: "Immergas - HP Run request (boiler)"
+    id: pc_zlecenie_pracy
+    icon: mdi:power
+  # v1.3.1: night function U11 active (0x1E input 12 != 0) - compressor limited inside the U12-U13 window
+  - platform: template
+    name: "Immergas - HP U11 Night function"
+    id: pc_funkcja_nocna
+    icon: mdi:weather-night
+  - platform: template
+    name: "Immergas - HP Request accepted"
+    id: pc_zlecenie_przyjete
+    icon: mdi:check-circle-outline
+  - platform: template
+    name: "Immergas - HP Compressor running"
+    id: pc_sprezarka_pracuje
+    icon: mdi:heat-pump
+    device_class: running
+  - platform: template
+    name: "Immergas - HP Fan running"
+    id: pc_wentylator_pracuje
+    icon: mdi:fan
+    device_class: running

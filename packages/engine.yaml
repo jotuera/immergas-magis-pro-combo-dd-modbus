@@ -1,0 +1,2235 @@
+# Immergas Magis Pro / Combo D+/D- emulator - package "engine"
+# Bus engine: globals, the 10 ms RX/TX loop (handle_pdu, emulated Dominus 0x33 and zone panels 0x29/0x2A/0x2B,
+# sniffer) and the emulation switches. Every other package depends on it.
+# Part of jotuera/immergas-magis-pro-combo-dd-modbus (MIT). Loaded by the main YAML through `packages:`.
+
+globals:
+  # v1.3.0: A31 (0x29 W 6102) as last written by the boiler - echoed back on READ like the physical panel
+  - id: panel_a31_raw
+    type: int
+    restore_value: yes
+    initial_value: '0'
+  # v1.2.0 bus sniffer (diagnostic, OFF by default)
+  - id: dd_sniff_enabled
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: dd_sniff_reset_req
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: dd_sniff_regs
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: dd_sniff_changes
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  # ------------------------------------------------------------
+  # v62: room temperature/humidity from HA (for the emulated panel 0x29).
+  # int: temp x10 (215 = 21.5C), humidity in % (50). Unavailable -> last known value.
+  # ------------------------------------------------------------
+  # v71: boiler fault monitoring. dd_err_code = last PDU 2100 (0=no fault),
+  # dd_err_2101 = last PDU 2101 (reset/flags). Captured in handle_pdu from the bus.
+  - id: dd_err_code
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: dd_err_2101
+    type: int
+    restore_value: no
+    initial_value: '0'
+  # v73: Zone 1 status (PDU 2010, LB flag8). bit6=Comfort, bit7=Eco, bit2=Manual, bit3=heat request.
+  - id: dd_zone1_status_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+  # v96: status/phase for Zone 2 and 3 (mirror of 2010). Placeholder - the boiler writes zone 2/3 status only
+  # in a multi-zone setup (A13). With no source it stays 0 -> the phase shows "—".
+  - id: dd_zone2_status_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: dd_zone3_status_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: ha_room_temp_raw
+    type: int
+    restore_value: yes
+    initial_value: '210'
+
+  - id: ha_room_humidity_raw
+    type: int
+    restore_value: yes
+    initial_value: '50'
+
+  # v94: temp/humidity for Zone 2 and 3 (from HA, for emulating panels 0x2A/0x2B). Placeholders.
+  - id: ha_room_temp_2_raw
+    type: int
+    restore_value: yes
+    initial_value: '210'
+  - id: ha_room_temp_3_raw
+    type: int
+    restore_value: yes
+    initial_value: '210'
+  - id: ha_room_humidity_2_raw
+    type: int
+    restore_value: yes
+    initial_value: '50'
+  - id: ha_room_humidity_3_raw
+    type: int
+    restore_value: yes
+    initial_value: '50'
+
+  # v63: buffers for 3 sources + index of the selected source (1-3). ha_room_*_raw = selected (read by emu29).
+  - id: ha_temp_raw_1
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_temp_raw_2
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_temp_raw_3
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_temp_raw_4
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_temp_raw_5
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_hum_raw_1
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_hum_raw_2
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_hum_raw_3
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_hum_raw_4
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_hum_raw_5
+    type: int
+    restore_value: no
+    initial_value: '50'
+  # v100: restore_value: no -> after reboot returns to source 4 (Upper floor), consistent with the select's initial_option.
+  - id: temp_src_idx
+    type: int
+    restore_value: no
+    initial_value: '4'
+  - id: hum_src_idx
+    type: int
+    restore_value: no
+    initial_value: '4'
+
+  # v99: buffers for 4 temp/humidity sources of Zone 2 and 3 + active source index (1-4, restore:no -> after
+  # reboot source 1). ha_room_temp/humidity_2/3_raw = selected (read by emu_zone_value for 0x2A/0x2B).
+  - id: ha_temp_raw_z2_1
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_temp_raw_z2_2
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_temp_raw_z2_3
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_temp_raw_z2_4
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_hum_raw_z2_1
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_hum_raw_z2_2
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_hum_raw_z2_3
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_hum_raw_z2_4
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_temp_raw_z3_1
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_temp_raw_z3_2
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_temp_raw_z3_3
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_temp_raw_z3_4
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_hum_raw_z3_1
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_hum_raw_z3_2
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_hum_raw_z3_3
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_hum_raw_z3_4
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_temp_raw_z2_5
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_hum_raw_z2_5
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: ha_temp_raw_z3_5
+    type: int
+    restore_value: no
+    initial_value: '210'
+  - id: ha_hum_raw_z3_5
+    type: int
+    restore_value: no
+    initial_value: '50'
+  - id: temp_src_z2_idx
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: hum_src_z2_idx
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: temp_src_z3_idx
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: hum_src_z3_idx
+    type: int
+    restore_value: no
+    initial_value: '1'
+
+  # ------------------------------------------------------------
+  # Bus / control
+  # ------------------------------------------------------------
+  - id: dd_last_rx_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: dd_last_tx_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  # CRC failures seen by the RX parser since boot (relative metric: the parser resyncs one byte at a time,
+  # so a corrupted frame can count more than once).
+  - id: dd_crc_bad_count
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: dd_last_crc_bad_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: dd_enable_replies
+    type: bool
+    restore_value: yes
+    initial_value: 'true'
+
+  # Diagnostic switches left from the old emulation.
+  # In this version they do NOT enable bus replies, to avoid triggering E121/E142.
+  - id: dd_emulate_29_diag
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+  - id: dd_emulate_33_diag
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+  # v85: emulation flags for the Zone 2 (0x2A/42) and Zone 3 (0x2B/43) panels. NOTE: flags only -
+  # backend serwowania rejestrow 0x2A/0x2B jeszcze NIE istnieje (do zrobienia jak dla 0x29).
+  - id: dd_emulate_2a_diag
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+  - id: dd_emulate_2b_diag
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+  # v66: time of the last READ (33 03 / 29 03) by the boiler = "online" signal (the boiler reads us).
+  - id: dd_last_33_read_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: dd_last_29_read_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: dd_last_2a_read_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: dd_last_2b_read_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  # v94: last 0x1E activity (addr 30, machine room ALWAYS present) = "Modbus connection" (bus alive).
+  - id: dd_last_1e_read_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  # ------------------------------------------------------------
+  # Main Zone 1 / DHW values
+  # ------------------------------------------------------------
+  - id: cwu_setpoint_raw
+    type: int
+    restore_value: yes
+    initial_value: '500'
+
+  - id: dhw_temp_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: outside_temp_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: zone1_temp_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: zone1_setpoint_raw
+    type: int
+    restore_value: yes
+    initial_value: '210'
+
+  - id: zone1_offset_raw
+    type: int
+    restore_value: yes
+    initial_value: '20'
+
+  # v96: CH setpoint + offset for Zone 2 and 3 (placeholders - 0x2A/0x2B serving backend TBD).
+  - id: zone2_setpoint_raw
+    type: int
+    restore_value: yes
+    initial_value: '210'
+  - id: zone3_setpoint_raw
+    type: int
+    restore_value: yes
+    initial_value: '210'
+  - id: zone2_offset_raw
+    type: int
+    restore_value: yes
+    initial_value: '20'
+  - id: zone3_offset_raw
+    type: int
+    restore_value: yes
+    initial_value: '20'
+
+  - id: operating_mode_raw
+    type: int
+    restore_value: yes
+    initial_value: '3'
+
+  - id: operating_mode_target_raw
+    type: int
+    restore_value: yes
+    initial_value: '3'
+
+  # v57 MODE CONTROL: separates the requested mode (operating_mode_raw, returned on READ 2000)
+  # from the reported mode (what the boiler WRITES BACK on 2000 - display only).
+  - id: operating_mode_reported
+    type: int
+    restore_value: no
+    initial_value: '3'
+
+  # ------------------------------------------------------------
+  # Dominus / Zone 1 - "Manage Zone" screen
+  # ------------------------------------------------------------
+  - id: dominus_comfort_heat_raw
+    type: int
+    restore_value: yes
+    initial_value: '240'
+
+  - id: dominus_eco_heat_raw
+    type: int
+    restore_value: yes
+    initial_value: '200'
+
+  - id: dominus_comfort_cool_raw
+    type: int
+    restore_value: yes
+    initial_value: '230'
+
+  - id: dominus_eco_cool_raw
+    type: int
+    restore_value: yes
+    initial_value: '250'
+
+  - id: dominus_humidity_raw
+    type: int
+    restore_value: yes
+    initial_value: '51'
+
+  - id: dominus_set_flow_raw
+    type: int
+    restore_value: yes
+    initial_value: '300'
+
+  # v102: "Manage Zone" settings for Zone 2 (0x2A) and 3 (0x2B) - served per-address in emu_zone_value.
+  - id: dominus_comfort_heat_z2_raw
+    type: int
+    restore_value: yes
+    initial_value: '240'
+
+  - id: dominus_eco_heat_z2_raw
+    type: int
+    restore_value: yes
+    initial_value: '200'
+
+  - id: dominus_comfort_cool_z2_raw
+    type: int
+    restore_value: yes
+    initial_value: '230'
+
+  - id: dominus_eco_cool_z2_raw
+    type: int
+    restore_value: yes
+    initial_value: '250'
+
+  - id: dominus_humidity_z2_raw
+    type: int
+    restore_value: yes
+    initial_value: '51'
+
+  - id: dominus_set_flow_z2_raw
+    type: int
+    restore_value: yes
+    initial_value: '300'
+
+  - id: dominus_comfort_heat_z3_raw
+    type: int
+    restore_value: yes
+    initial_value: '240'
+
+  - id: dominus_eco_heat_z3_raw
+    type: int
+    restore_value: yes
+    initial_value: '200'
+
+  - id: dominus_comfort_cool_z3_raw
+    type: int
+    restore_value: yes
+    initial_value: '230'
+
+  - id: dominus_eco_cool_z3_raw
+    type: int
+    restore_value: yes
+    initial_value: '250'
+
+  - id: dominus_humidity_z3_raw
+    type: int
+    restore_value: yes
+    initial_value: '51'
+
+  - id: dominus_set_flow_z3_raw
+    type: int
+    restore_value: yes
+    initial_value: '300'
+
+  # v117 last-writer-wins for Zone 2/3 setpoints: last value seen on the bus (adopt only when it differs).
+  # Zone 1, the Dominus settings, DHW and the mode use lww_guard.h instead.
+  - id: zone2_setpoint_last_bus
+    type: int
+    restore_value: no
+    initial_value: '-32768'
+  - id: zone3_setpoint_last_bus
+    type: int
+    restore_value: no
+    initial_value: '-32768'
+
+  # ------------------------------------------------------------
+  # Dodatkowe 0x29 - diagnostyczne/kandydaci
+  # ------------------------------------------------------------
+  - id: pdu_29_2006_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  # 2300/2302/2303 look like the Dominus/Zone controller time/date.
+  # 2300 zostawiamy jako surowy licznik/scheduler, bez wymuszonej interpretacji.
+  - id: pdu_29_2300_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: pdu_29_2302_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: pdu_29_2303_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: pdu_29_2293_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: pdu_29_3011_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: pdu_29_3012_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: pdu_29_3013_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: pdu_29_3014_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: pdu_29_3031_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: pdu_29_3042_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+  # v92: panel firmware version for Zone 2/3 (0x2A/0x2B reg 3042) - placeholders (no data without zones 2/3).
+  - id: pdu_2a_version_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: pdu_2b_version_raw
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  # ------------------------------------------------------------
+  # v21 emulator 0x29 / 41 - liczniki i status
+  # ------------------------------------------------------------
+  - id: dd_emu_29_read_count
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: dd_emu_29_write_count
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: dd_emu_29_last_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: dd_emu_29_auto_tx_count
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: dd_emu_29_auto_tx_last_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  # ------------------------------------------------------------
+  # v48 emulator Dominus 0x33 / 51 - liczniki i status
+  # ------------------------------------------------------------
+  - id: dd_emu_33_probe_count
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: dd_emu_33_ack_count
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+  - id: dd_emu_33_last_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+switch:
+  # v100: removed the 4 "Chrono: profile Cal 1..4" switches - misleading "activation" (in the app none of the 4
+  # calendar is the main one; just assign a profile to each day with the CO selects below +
+  # shortcut "all days -> profile"). Profile editors (datetime cal1-4) and day selects stay.
+  # v68: "Discovery of new PDUs" removed - diagnostics belong to the sniffer (immergas-dd-sniffer v47).
+  # v68: "Active commands" removed - old active write disabled since v57 (slave model).
+  - platform: template
+    name: "Immergas - Emulate Modbus"
+    id: enable_replies_switch
+    icon: mdi:lan-connect
+    entity_category: diagnostic
+    restore_mode: RESTORE_DEFAULT_ON
+    lambda: |-
+      return id(dd_enable_replies);
+    turn_on_action:
+      - lambda: |-
+          id(dd_enable_replies) = true;
+          ESP_LOGW("dd_mode", "Polaczenie Modbus ON - pelny RX+TX na magistrali (dekodowanie + odpowiedzi).");
+    turn_off_action:
+      - lambda: |-
+          id(dd_enable_replies) = false;
+          // v104: "Emulate Modbus" is the MASTER - OFF disables all emulation (Dominus + zone panels).
+          id(dd_emulate_33_diag) = false;
+          id(dd_emulate_29_diag) = false;
+          id(dd_emulate_2a_diag) = false;
+          id(dd_emulate_2b_diag) = false;
+          id(dd_emulate_33_switch).publish_state(false);
+          id(dd_emulate_29_switch).publish_state(false);
+          id(dd_emulate_2a_switch).publish_state(false);
+          id(dd_emulate_2b_switch).publish_state(false);
+          id(dd_last_33_read_ms) = 0;
+          id(dd_last_29_read_ms) = 0;
+          id(dd_last_2a_read_ms) = 0;
+          id(dd_last_2b_read_ms) = 0;
+          ESP_LOGW("dd_mode", "Emuluj Modbus OFF (master) - RX+TX off + zgaszone Dominus i panele stref 1/2/3.");
+
+  # v90: two separate, MUTUALLY EXCLUSIVE emulation switches (emulate EITHER the Dominus OR
+  # a panel - never both, since one is physical). Enabling one disables the other. Default: Dominus ON,
+  # Zone 1 Panel OFF. "Modbus connection" is the master gate (default ON).
+  - platform: template
+    name: "Immergas - Emulate Dominus"
+    id: dd_emulate_33_switch
+    icon: mdi:robot-industrial
+    entity_category: diagnostic
+    restore_mode: RESTORE_DEFAULT_ON
+    lambda: |-
+      return id(dd_emulate_33_diag);
+    turn_on_action:
+      - lambda: |-
+          // v107 SAFETY: a physical device answers on 0x33 (connected) -> do NOT enable emulation
+          // (two devices on the same address = bus collision).
+          if (id(dd_last_33_read_ms) != 0 && (millis() - id(dd_last_33_read_ms)) < 30000) {
+            ESP_LOGE("dd_mode", "BEZPIECZNIK: fizyczny Dominus 0x33 wykryty (polaczono) - NIE wlaczam emulacji.");
+            id(dd_emulate_33_diag) = false;
+            id(dd_emulate_33_switch).publish_state(false);
+            return;
+          }
+          id(dd_emulate_33_diag) = true;
+          id(dd_emulate_29_diag) = false;
+          id(dd_emulate_2a_diag) = false;
+          id(dd_emulate_2b_diag) = false;
+          ESP_LOGW("dd_mode", "Emuluj DOMINUS 0x33 ON (panele OFF - wykluczenie)");
+    turn_off_action:
+      - lambda: |-
+          id(dd_emulate_33_diag) = false;
+          id(dd_last_33_read_ms) = 0;  // v107: reset -> "Connection" counts only physical replies from now on
+          ESP_LOGW("dd_mode", "Emuluj Dominus 0x33 OFF");
+
+  - platform: template
+    name: "Immergas - Emulate Panel Zone 1"
+    id: dd_emulate_29_switch
+    icon: mdi:robot
+    entity_category: diagnostic
+    restore_mode: RESTORE_DEFAULT_OFF
+    lambda: |-
+      return id(dd_emulate_29_diag);
+    turn_on_action:
+      - lambda: |-
+          // v107 SAFETY: a physical device answers on 0x29 (connected) -> do NOT enable emulation
+          // (two devices on the same address = bus collision).
+          if (id(dd_last_29_read_ms) != 0 && (millis() - id(dd_last_29_read_ms)) < 30000) {
+            ESP_LOGE("dd_mode", "BEZPIECZNIK: fizyczny panel Strefy 1 0x29 wykryty (polaczono) - NIE wlaczam emulacji.");
+            id(dd_emulate_29_diag) = false;
+            id(dd_emulate_29_switch).publish_state(false);
+            return;
+          }
+          id(dd_emulate_29_diag) = true;
+          id(dd_emulate_33_diag) = false;
+          ESP_LOGW("dd_mode", "Emuluj PANEL Strefy 1 0x29 ON (Dominus OFF - wykluczenie)");
+    turn_off_action:
+      - lambda: |-
+          id(dd_emulate_29_diag) = false;
+          id(dd_last_29_read_ms) = 0;  // v107: reset polaczenia
+          ESP_LOGW("dd_mode", "Emuluj Panel Strefy 1 0x29 OFF");
+
+interval:
+  - interval: 10ms
+    then:
+      - lambda: |-
+          static std::vector<uint8_t> rx;
+
+          // v1.2.0 SNIFFER: hash table of last values (key addr<<24 | kind<<16 | reg), 512 slots, max 400 registers.
+          struct SniffEnt { uint32_t k; int16_t v; uint16_t n; bool used; };
+          static SniffEnt sniff_tab[512];
+          static int sniff_used = 0;
+          if (id(dd_sniff_reset_req)) {
+            for (auto &e : sniff_tab) e.used = false;
+            sniff_used = 0;
+            id(dd_sniff_reset_req) = false;
+            id(dd_sniff_regs) = 0;
+            id(dd_sniff_changes) = 0;
+            id(sniff_last_change).publish_state("reset - new baseline");
+            ESP_LOGI("sniff", "RESET sniffer map");
+          }
+
+          // v95: "Modbus connection" (dd_enable_replies) = master RX+TX. OFF -> the emulator does NOT
+          // process the bus: we drain the UART (to avoid overflow), clear rx, don't decode,
+          // don't reply, don't track. The "Modbus status" sensor (0x1E) -> disconnected.
+          if (!id(dd_enable_replies)) {
+            uint8_t bdrain;
+            while (id(dd_uart).available()) { id(dd_uart).read_byte(&bdrain); }
+            rx.clear();
+            return;
+          }
+
+          static uint16_t last_start_03[256] = {0};
+          static uint16_t last_start_04[256] = {0};
+
+          static const uint16_t REG_MODE                    = 2000;
+          static const uint16_t REG_ZONE1_STATUS            = 2010;
+          static const uint16_t REG_ZONE1_TEMP_OLD          = 2011;
+          static const uint16_t REG_ZONE1_SETPOINT          = 2015;
+          static const uint16_t REG_ZONE1_MAX               = 2016;
+          static const uint16_t REG_ZONE1_OFFSET            = 2017;
+          static const uint16_t REG_DHW_SETPOINT            = 2095;
+
+          static const uint16_t REG_COMFORT_HEAT            = 2210;
+          static const uint16_t REG_ECO_HEAT                = 2211;
+          static const uint16_t REG_COMFORT_COOL            = 2214;
+          static const uint16_t REG_ECO_COOL_COPY           = 2215;
+          static const uint16_t REG_HUMIDITY                = 2216;
+          static const uint16_t REG_SET_FLOW                = 2217;
+          static const uint16_t REG_ZONE1_MAX_COPY          = 2218;
+          static const uint16_t REG_ZONE1_OFFSET_COPY       = 2219;
+
+          static const uint16_t REG_DHW_SETPOINT_COPY_1     = 2291;
+          static const uint16_t REG_DHW_SETPOINT_COPY_2     = 2292;
+          static const uint16_t REG_DHW_TEMP_COPY_2293      = 2293;
+          static const uint16_t REG_ECO_COOL                = 2707;
+
+          static const uint16_t REG_OUTSIDE_TEMP            = 3002;
+          static const uint16_t REG_ZONE1_TEMP_COPY         = 3009;
+          static const uint16_t REG_DHW_SETPOINT_COPY_3     = 3015;
+          static const uint16_t REG_DHW_TEMP                = 3016;
+
+          auto calc_crc = [](const std::vector<uint8_t> &data) -> uint16_t {
+            uint16_t crc = 0xFFFF;
+            for (uint8_t b : data) {
+              crc ^= b;
+              for (int i = 0; i < 8; i++) {
+                if (crc & 0x0001) {
+                  crc = (crc >> 1) ^ 0xA001;
+                } else {
+                  crc >>= 1;
+                }
+              }
+            }
+            return crc;
+          };
+
+          auto crc_ok = [&](const std::vector<uint8_t> &frame) -> bool {
+            if (frame.size() < 4) return false;
+            std::vector<uint8_t> body(frame.begin(), frame.end() - 2);
+            uint16_t crc = calc_crc(body);
+            return frame[frame.size() - 2] == (uint8_t) (crc & 0xFF) && frame[frame.size() - 1] == (uint8_t) ((crc >> 8) & 0xFF);
+          };
+
+          auto crc_ok_len = [&](const std::vector<uint8_t> &b, int len) -> bool {
+            if (b.size() < (size_t) len) return false;
+            std::vector<uint8_t> candidate(b.begin(), b.begin() + len);
+            return crc_ok(candidate);
+          };
+
+          auto expected_len = [&](const std::vector<uint8_t> &b) -> int {
+            if (b.size() < 2) return 0;
+            uint8_t func = b[1];
+
+            if (func == 0x03 || func == 0x04) {
+              if (b.size() >= 8 && crc_ok_len(b, 8)) return 8;
+              if (b.size() < 3) return 0;
+              uint8_t byte_count = b[2];
+              if (byte_count > 0 && byte_count <= 64 && (byte_count % 2 == 0)) {
+                int len = 5 + byte_count;
+                if (b.size() >= (size_t) len) return len;
+              }
+              return 0;
+            }
+
+            if (func == 0x06) {
+              if (b.size() >= 8) return 8;
+              return 0;
+            }
+
+            if (func == 0x10) {
+              if (b.size() >= 8 && crc_ok_len(b, 8)) return 8;
+              if (b.size() < 7) return 0;
+              uint8_t byte_count = b[6];
+              if (byte_count > 0 && byte_count <= 120 && (byte_count % 2 == 0)) {
+                int len = 9 + byte_count;
+                if (b.size() >= (size_t) len) return len;
+              }
+              return 0;
+            }
+
+            if (b.size() >= 8) return 8;
+            return 0;
+          };
+
+          auto hex_frame = [](const std::vector<uint8_t> &frame) -> std::string {
+            char buf[4];
+            std::string out;
+            for (uint8_t b : frame) {
+              snprintf(buf, sizeof(buf), "%02X ", b);
+              out += buf;
+            }
+            return out;
+          };
+
+          auto is_plausible_frame_start = [](const std::vector<uint8_t> &b, size_t pos) -> bool {
+            if (pos + 1 >= b.size()) return false;
+            uint8_t addr = b[pos];
+            uint8_t func = b[pos + 1];
+            bool addr_ok = (addr == 0x1E || addr == 0x29 || addr == 0x2A || addr == 0x2B || addr == 0x33);  // v97: +0x2B (Zone 3)
+            bool func_ok = (func == 0x03 || func == 0x04 || func == 0x06 || func == 0x10);
+            return addr_ok && func_ok;
+          };
+
+          auto resync_rx_prefix = [&]() -> void {
+            if (rx.size() < 2) return;
+            if (is_plausible_frame_start(rx, 0)) return;
+
+            size_t pos = 1;
+            while (pos + 1 < rx.size() && !is_plausible_frame_start(rx, pos)) {
+              pos++;
+            }
+
+            if (pos + 1 < rx.size()) {
+              // Discard junk before the real frame start, e.g. 6B FF DF AD F7 FD B5 or FF FF EF F0.
+              rx.erase(rx.begin(), rx.begin() + pos);
+            } else if (rx.size() > 16) {
+              // Don't let pure noise without a valid start build a huge buffer.
+              rx.erase(rx.begin(), rx.end() - 1);
+            }
+          };
+
+          auto emulator_29_enabled = [&]() -> bool {
+            // v62: slave model - dd_active_commands no longer required (old active write).
+            return id(dd_enable_replies) && id(dd_emulate_29_diag);
+          };
+
+          auto emulator_33_enabled = [&]() -> bool {
+            // v50: auto Dominus 0x33 emulator active only after a deliberate enable.
+            // Do not enable alongside a physical Dominus, to avoid reply collisions.
+            return id(dd_enable_replies) && id(dd_emulate_33_diag);
+          };
+
+          // v97: Zone 2 (0x2A) and 3 (0x2B) panels - active only after enabling their switches.
+          // Multiple panels can coexist (different addresses); only Dominus 0x33 excludes panels.
+          auto emulator_2a_enabled = [&]() -> bool {
+            return id(dd_enable_replies) && id(dd_emulate_2a_diag);
+          };
+          auto emulator_2b_enabled = [&]() -> bool {
+            return id(dd_enable_replies) && id(dd_emulate_2b_diag);
+          };
+
+          // v70: Zone 1 schedule (chrono) controlled from HA (instead of constants from a dump).
+          // 2310-2347 = 4 profile dzienne cal1-4 (po 4 fascia on/off), 2410-2416 = profil
+          // per weekday. Register time: hi byte = hour, lo byte = minute
+          // (06:00 -> 6*256 = 1536). Serwowane identycznie dla 0x33 i 0x29 z tych encji.
+          auto chrono_reg_value = [&](uint16_t reg) -> int {
+            switch (reg) {
+              case 2310: return id(dt_cal1_f1_on).hour * 256 + id(dt_cal1_f1_on).minute;
+              case 2311: return id(dt_cal1_f1_off).hour * 256 + id(dt_cal1_f1_off).minute;
+              case 2312: return id(dt_cal1_f2_on).hour * 256 + id(dt_cal1_f2_on).minute;
+              case 2313: return id(dt_cal1_f2_off).hour * 256 + id(dt_cal1_f2_off).minute;
+              case 2314: return id(dt_cal1_f3_on).hour * 256 + id(dt_cal1_f3_on).minute;
+              case 2315: return id(dt_cal1_f3_off).hour * 256 + id(dt_cal1_f3_off).minute;
+              case 2316: return id(dt_cal1_f4_on).hour * 256 + id(dt_cal1_f4_on).minute;
+              case 2317: return id(dt_cal1_f4_off).hour * 256 + id(dt_cal1_f4_off).minute;
+              case 2320: return id(dt_cal2_f1_on).hour * 256 + id(dt_cal2_f1_on).minute;
+              case 2321: return id(dt_cal2_f1_off).hour * 256 + id(dt_cal2_f1_off).minute;
+              case 2322: return id(dt_cal2_f2_on).hour * 256 + id(dt_cal2_f2_on).minute;
+              case 2323: return id(dt_cal2_f2_off).hour * 256 + id(dt_cal2_f2_off).minute;
+              case 2324: return id(dt_cal2_f3_on).hour * 256 + id(dt_cal2_f3_on).minute;
+              case 2325: return id(dt_cal2_f3_off).hour * 256 + id(dt_cal2_f3_off).minute;
+              case 2326: return id(dt_cal2_f4_on).hour * 256 + id(dt_cal2_f4_on).minute;
+              case 2327: return id(dt_cal2_f4_off).hour * 256 + id(dt_cal2_f4_off).minute;
+              case 2330: return id(dt_cal3_f1_on).hour * 256 + id(dt_cal3_f1_on).minute;
+              case 2331: return id(dt_cal3_f1_off).hour * 256 + id(dt_cal3_f1_off).minute;
+              case 2332: return id(dt_cal3_f2_on).hour * 256 + id(dt_cal3_f2_on).minute;
+              case 2333: return id(dt_cal3_f2_off).hour * 256 + id(dt_cal3_f2_off).minute;
+              case 2334: return id(dt_cal3_f3_on).hour * 256 + id(dt_cal3_f3_on).minute;
+              case 2335: return id(dt_cal3_f3_off).hour * 256 + id(dt_cal3_f3_off).minute;
+              case 2336: return id(dt_cal3_f4_on).hour * 256 + id(dt_cal3_f4_on).minute;
+              case 2337: return id(dt_cal3_f4_off).hour * 256 + id(dt_cal3_f4_off).minute;
+              case 2340: return id(dt_cal4_f1_on).hour * 256 + id(dt_cal4_f1_on).minute;
+              case 2341: return id(dt_cal4_f1_off).hour * 256 + id(dt_cal4_f1_off).minute;
+              case 2342: return id(dt_cal4_f2_on).hour * 256 + id(dt_cal4_f2_on).minute;
+              case 2343: return id(dt_cal4_f2_off).hour * 256 + id(dt_cal4_f2_off).minute;
+              case 2344: return id(dt_cal4_f3_on).hour * 256 + id(dt_cal4_f3_on).minute;
+              case 2345: return id(dt_cal4_f3_off).hour * 256 + id(dt_cal4_f3_off).minute;
+              case 2346: return id(dt_cal4_f4_on).hour * 256 + id(dt_cal4_f4_on).minute;
+              case 2347: return id(dt_cal4_f4_off).hour * 256 + id(dt_cal4_f4_off).minute;
+              case 2410: return (int) id(sel_weekday_1).active_index().value_or(0) + 1;
+              case 2411: return (int) id(sel_weekday_2).active_index().value_or(0) + 1;
+              case 2412: return (int) id(sel_weekday_3).active_index().value_or(0) + 1;
+              case 2413: return (int) id(sel_weekday_4).active_index().value_or(0) + 1;
+              case 2414: return (int) id(sel_weekday_5).active_index().value_or(0) + 1;
+              case 2415: return (int) id(sel_weekday_6).active_index().value_or(0) + 1;
+              case 2416: return (int) id(sel_weekday_7).active_index().value_or(0) + 1;
+              case 2420: return (int) id(sel_weekday_z2_1).active_index().value_or(0) + 1;
+              case 2421: return (int) id(sel_weekday_z2_2).active_index().value_or(0) + 1;
+              case 2422: return (int) id(sel_weekday_z2_3).active_index().value_or(0) + 1;
+              case 2423: return (int) id(sel_weekday_z2_4).active_index().value_or(0) + 1;
+              case 2424: return (int) id(sel_weekday_z2_5).active_index().value_or(0) + 1;
+              case 2425: return (int) id(sel_weekday_z2_6).active_index().value_or(0) + 1;
+              case 2426: return (int) id(sel_weekday_z2_7).active_index().value_or(0) + 1;
+              case 2430: return (int) id(sel_weekday_z3_1).active_index().value_or(0) + 1;
+              case 2431: return (int) id(sel_weekday_z3_2).active_index().value_or(0) + 1;
+              case 2432: return (int) id(sel_weekday_z3_3).active_index().value_or(0) + 1;
+              case 2433: return (int) id(sel_weekday_z3_4).active_index().value_or(0) + 1;
+              case 2434: return (int) id(sel_weekday_z3_5).active_index().value_or(0) + 1;
+              case 2435: return (int) id(sel_weekday_z3_6).active_index().value_or(0) + 1;
+              case 2436: return (int) id(sel_weekday_z3_7).active_index().value_or(0) + 1;
+              case 2490: return (int) id(sel_dhw_weekday_1).active_index().value_or(0) + 1;
+              case 2491: return (int) id(sel_dhw_weekday_2).active_index().value_or(0) + 1;
+              case 2492: return (int) id(sel_dhw_weekday_3).active_index().value_or(0) + 1;
+              case 2493: return (int) id(sel_dhw_weekday_4).active_index().value_or(0) + 1;
+              case 2494: return (int) id(sel_dhw_weekday_5).active_index().value_or(0) + 1;
+              case 2495: return (int) id(sel_dhw_weekday_6).active_index().value_or(0) + 1;
+              case 2496: return (int) id(sel_dhw_weekday_7).active_index().value_or(0) + 1;
+              default: return 0;
+            }
+          };
+
+          auto emu29_value = [&](uint16_t reg) -> int {
+            // Safe default values based on the real 0x29/Zone 1 map.
+            // v21's goal is the presence of panel 0x29, not full control.
+            switch (reg) {
+              case REG_MODE: return id(operating_mode_raw);
+              case 2001: return 8;
+              case 2002: return 0;
+              case 2005: return id(ha_room_temp_raw);       // v62: temp pomieszczenia z HA
+              case 2006: return id(ha_room_humidity_raw);   // v62: humidity from HA
+              case REG_ZONE1_STATUS: return 4;
+              case REG_ZONE1_TEMP_OLD: return id(ha_room_temp_raw);  // v62: temp z HA (kopia 2011)
+              case 2012: return 0;
+              case REG_ZONE1_SETPOINT: return id(zone1_setpoint_raw);
+              case REG_ZONE1_MAX: return 300;
+              case REG_ZONE1_OFFSET: return id(zone1_offset_raw);
+              case 2090: return 4;
+              case REG_DHW_SETPOINT: return id(cwu_setpoint_raw);
+              case 2100: return 0;
+              case 2101: return 0;
+              case 2102: return 0;
+              case 2103: return 0;
+
+              case REG_COMFORT_HEAT: return id(dominus_comfort_heat_raw);
+              case REG_ECO_HEAT: return id(dominus_eco_heat_raw);
+              case REG_COMFORT_COOL: return id(dominus_comfort_cool_raw);
+              case REG_ECO_COOL_COPY: return id(dominus_eco_cool_raw);
+              case REG_HUMIDITY: return id(dominus_humidity_raw);
+              case REG_SET_FLOW: return id(dominus_set_flow_raw);
+              case REG_ZONE1_MAX_COPY: return 300;
+              case REG_ZONE1_OFFSET_COPY: return id(zone1_offset_raw);
+
+              case 2290: return id(cwu_setpoint_raw);
+              case REG_DHW_SETPOINT_COPY_1: return id(cwu_setpoint_raw);
+              case REG_DHW_SETPOINT_COPY_2: return id(cwu_setpoint_raw);
+              case REG_DHW_TEMP_COPY_2293: return id(dhw_temp_raw) > 0 ? id(dhw_temp_raw) : 482;
+              case 2294: return (int) id(sel_programy_czasowe).active_index().value_or(0);  // v1.3.0
+              case 2300: return id(pdu_29_2300_raw) != 0 ? id(pdu_29_2300_raw) : 14101;
+              case 2302: return id(pdu_29_2302_raw) != 0 ? id(pdu_29_2302_raw) : 5638;
+              case 2303: return id(pdu_29_2303_raw) > 0 ? id(pdu_29_2303_raw) : 2026;
+
+              case 2310: case 2311: case 2312: case 2313:
+              case 2314: case 2315: case 2316: case 2317:
+              case 2320: case 2321: case 2322: case 2323:
+              case 2324: case 2325: case 2326: case 2327:
+              case 2330: case 2331: case 2332: case 2333:
+              case 2334: case 2335: case 2336: case 2337:
+              case 2340: case 2341: case 2342: case 2343:
+              case 2344: case 2345: case 2346: case 2347:
+              case 2410: case 2411: case 2412: case 2413:
+              case 2414: case 2415: case 2416:
+              case 2420: case 2421: case 2422: case 2423:
+              case 2424: case 2425: case 2426:
+              case 2430: case 2431: case 2432: case 2433:
+              case 2434: case 2435: case 2436:
+                return chrono_reg_value(reg);
+
+              case 2490: case 2491: case 2492: case 2493:
+              case 2494: case 2495: case 2496:
+                return chrono_reg_value(reg);
+
+              case REG_ECO_COOL: return id(dominus_eco_cool_raw);
+              case REG_OUTSIDE_TEMP: return id(outside_temp_raw) > 0 ? id(outside_temp_raw) : 167;
+              case 3003: return 0;
+              case REG_ZONE1_TEMP_COPY: return id(ha_room_temp_raw);  // v62: temp z HA (kopia 3009)
+              case 3010: return id(ha_room_humidity_raw);             // v62: humidity from HA (copy of 3010)
+              case 3011: return id(pdu_29_3011_raw) != 0 ? id(pdu_29_3011_raw) : 349;
+              case 3012: return id(pdu_29_3012_raw) != 0 ? id(pdu_29_3012_raw) : 349;
+              case 3013: return id(pdu_29_3013_raw) != 0 ? id(pdu_29_3013_raw) : 345;
+              case 3014: return id(pdu_29_3014_raw) != 0 ? id(pdu_29_3014_raw) : 391;
+              case REG_DHW_SETPOINT_COPY_3: return id(cwu_setpoint_raw);
+              case REG_DHW_TEMP: return id(dhw_temp_raw) > 0 ? id(dhw_temp_raw) : 482;
+              case 3031: return 600;
+              case 3042: return 201;
+              case 6102: return id(panel_a31_raw);                                          // v1.3.0: echo A31
+              case 6105: return (int) id(sel_modulacja_sonda).active_index().value_or(0);  // v1.3.0
+              case 6107: return id(sw_punkt_rosy).state ? 1 : 0;                           // v1.3.0
+              case 6150: return 1;
+              default: return 0;
+            }
+          };
+
+          auto emu33_value = [&](uint16_t reg) -> int {
+            // Safe Dominus 0x33 map from real logs.
+            switch (reg) {
+              case REG_MODE: return id(operating_mode_raw);
+              case 2001: return 8;
+              case 2002: return 0;
+              case REG_ZONE1_STATUS: return 4;
+              case REG_ZONE1_TEMP_OLD: return 32767;
+              case 2012: return 0;
+              case REG_ZONE1_SETPOINT: return id(zone1_setpoint_raw);
+              case REG_ZONE1_MAX: return 300;
+              case REG_ZONE1_OFFSET: return id(zone1_offset_raw);
+              case REG_DHW_SETPOINT: return id(cwu_setpoint_raw);
+              case 2100: return 0;
+              case 2101: return 0;
+
+              case REG_COMFORT_HEAT: return id(dominus_comfort_heat_raw);
+              case REG_ECO_HEAT: return id(dominus_eco_heat_raw);
+              case REG_COMFORT_COOL: return id(dominus_comfort_cool_raw);
+              case REG_ECO_COOL_COPY: return id(dominus_eco_cool_raw);
+              case REG_HUMIDITY: return id(dominus_humidity_raw);
+              case REG_SET_FLOW: return id(dominus_set_flow_raw);
+              // v61 anti-flicker: the boiler reads 2214 count5 (2214..2218), and 2218 is a COPY of the offset
+              // of Zone 1 (a real Dominus returns the same as 2017 there, e.g. -10). Previously 0 ->
+              // niespojnosc 2017 vs 2218 = "miganie o jeden". Teraz spojnie z 2017.
+              case REG_ZONE1_MAX_COPY: return id(zone1_offset_raw);
+              case REG_ZONE1_OFFSET_COPY: return id(zone1_offset_raw);
+
+              case 2310: case 2311: case 2312: case 2313:
+              case 2314: case 2315: case 2316: case 2317:
+              case 2320: case 2321: case 2322: case 2323:
+              case 2324: case 2325: case 2326: case 2327:
+              case 2330: case 2331: case 2332: case 2333:
+              case 2334: case 2335: case 2336: case 2337:
+              case 2340: case 2341: case 2342: case 2343:
+              case 2344: case 2345: case 2346: case 2347:
+              case 2410: case 2411: case 2412: case 2413:
+              case 2414: case 2415: case 2416:
+              case 2420: case 2421: case 2422: case 2423:
+              case 2424: case 2425: case 2426:
+              case 2430: case 2431: case 2432: case 2433:
+              case 2434: case 2435: case 2436:
+              case 2490: case 2491: case 2492: case 2493:
+              case 2494: case 2495: case 2496:
+                return chrono_reg_value(reg);
+
+              case REG_OUTSIDE_TEMP: return id(outside_temp_raw) > 0 ? id(outside_temp_raw) : 207;
+              case REG_DHW_TEMP: return id(dhw_temp_raw) > 0 ? id(dhw_temp_raw) : 454;
+              case 3031: return 60;
+              case 4199: return 1;
+              default: return 0;
+            }
+          };
+
+          // v97: Zone 2/3 panel values (0x2A/0x2B). The SAME registers as panel 0x29, but the
+          // room values (temp/humidity) and settings (setpoint/offset) come from THAT zone's globals. The rest
+          // (tryb, chrono, komfort/eko, CWU, daty, wersja) wspolna -> delegacja do emu29_value.
+          auto emu_zone_value = [&](uint16_t reg, uint8_t zaddr, int temp_raw, int hum_raw, int sp_raw, int off_raw) -> int {
+            bool z2 = (zaddr == 0x2A);  // v102: 0x2A=Zone 2, 0x2B=Zone 3
+            switch (reg) {
+              case 2005: case REG_ZONE1_TEMP_OLD: case REG_ZONE1_TEMP_COPY: return temp_raw;  // 2005/2011/3009
+              case 2006: case 3010: return hum_raw;
+              case REG_ZONE1_SETPOINT: return sp_raw;                                          // 2015
+              case REG_ZONE1_OFFSET: case REG_ZONE1_OFFSET_COPY: return off_raw;               // 2017/2219
+              // v102: per-zone "Manage Zone" settings (Set Comfort/Eco Heat/Cool, humidity U08/U18, Set Flow)
+              case REG_COMFORT_HEAT: return z2 ? id(dominus_comfort_heat_z2_raw) : id(dominus_comfort_heat_z3_raw);
+              case REG_ECO_HEAT:     return z2 ? id(dominus_eco_heat_z2_raw)     : id(dominus_eco_heat_z3_raw);
+              case REG_COMFORT_COOL: return z2 ? id(dominus_comfort_cool_z2_raw) : id(dominus_comfort_cool_z3_raw);
+              case REG_ECO_COOL_COPY: return z2 ? id(dominus_eco_cool_z2_raw)    : id(dominus_eco_cool_z3_raw);
+              case REG_HUMIDITY:     return z2 ? id(dominus_humidity_z2_raw)     : id(dominus_humidity_z3_raw);
+              case REG_SET_FLOW:     return z2 ? id(dominus_set_flow_z2_raw)     : id(dominus_set_flow_z3_raw);
+              default: return emu29_value(reg);
+            }
+          };
+
+          auto rs485_send_v48 = [&](const std::vector<uint8_t> &data, const char *label) {
+            // v96 SAFETY: 0x1E (addr 30, pump machine room) is a REAL device on the bus.
+            // The emulator NEVER transmits on 0x1E (RX/monitor only). Hard guard: if some future
+            // path tries to TX on 0x1E -> we block it and log an error, to avoid colliding with the machine room.
+            if (!data.empty() && data[0] == 0x1E) {
+              ESP_LOGE("dd_rs485", "BEZPIECZNIK v96: zablokowano TX na 0x1E (maszynownia) label=%s - emulator nie nadaje na adres 30", label);
+              return;
+            }
+            // DE handled by the UART hardware (flow_control_pin): queue the frame and return, no busy-wait.
+            id(dd_uart).write_array(data.data(), data.size());
+            id(dd_last_tx_ms) = millis();
+            id(dd_emu_29_auto_tx_count)++;
+            id(dd_emu_29_auto_tx_last_ms) = id(dd_last_tx_ms);
+            ESP_LOGW("dd_rs485", "v48 IMMEDIATE RTU-HOLD TX label=%s len=%u frame=%s", label, (unsigned) data.size(), hex_frame(data).c_str());
+          };
+
+          auto send_emu29_read03_response = [&](uint16_t start, uint16_t count) {
+            if (count == 0 || count > 40) {
+              ESP_LOGW("dd_emu_29", "Nie odpowiadam READ03 0x29 start=%u count=%u - count poza limitem", start, count);
+              return;
+            }
+
+            std::vector<uint8_t> resp;
+            resp.push_back(0x29);
+            resp.push_back(0x03);
+            resp.push_back((uint8_t) (count * 2));
+
+            std::string values_json = "[";
+            for (uint16_t i = 0; i < count; i++) {
+              if (i > 0) values_json += ",";
+              uint16_t reg = start + i;
+              int value = emu29_value(reg);
+              // v29 diagnostic override: for the most important presence query
+              // we return exactly the values from a real panel captured in the log:
+              // req 29 03 07 D5 00 02 D2 AF -> resp 29 03 04 00 E9 00 3C 83 D4
+              // czyli 2005=233 (23.3°C), 2006=60 (%).
+              if (start == 2005 && count == 2) {
+                if (reg == 2005) value = id(ha_room_temp_raw);      // v62: temp pomieszczenia z HA
+                if (reg == 2006) value = id(ha_room_humidity_raw);  // v62: humidity from HA
+              }
+              uint16_t uvalue = (uint16_t) value;
+              resp.push_back((uvalue >> 8) & 0xFF);
+              resp.push_back(uvalue & 0xFF);
+              values_json += std::to_string((int16_t) uvalue);
+            }
+            values_json += "]";
+
+            uint16_t crc = calc_crc(resp);
+            resp.push_back(crc & 0xFF);
+            resp.push_back((crc >> 8) & 0xFF);
+
+            rs485_send_v48(resp, "emu29_read03_resp");
+            id(dd_emu_29_read_count)++;
+            id(dd_emu_29_last_ms) = millis();
+            id(dd_last_29_read_ms) = millis();  // v93: online = ODPOWIEDZIELISMY jako panel 0x29
+
+            ESP_LOGW("dd_emu_29", "v48 immediate exact-real-2005 emu READ03 resp addr=0x29 start=%u count=%u frame=%s", start, count, hex_frame(resp).c_str());
+          };
+
+          auto send_emu29_write06_ack = [&](const std::vector<uint8_t> &req, uint16_t reg, int value) {
+            static uint32_t last_ack_ms = 0;
+            static uint16_t last_reg = 0;
+            static int last_value = 0;
+            uint32_t now_ack = millis();
+            if (last_reg == reg && last_value == value && (now_ack - last_ack_ms) < 100) {
+              ESP_LOGD("dd_emu_29", "Pomijam prawdopodobne echo własnego WRITE06 ACK reg=%u value=%d", reg, value);
+              return;
+            }
+            last_ack_ms = now_ack;
+            last_reg = reg;
+            last_value = value;
+
+            rs485_send_v48(req, "emu29_write06_ack");
+            id(dd_emu_29_write_count)++;
+            id(dd_emu_29_last_ms) = millis();
+            ESP_LOGW("dd_emu_29", "TX emu WRITE06 ACK addr=0x29 reg=%u value=%d frame=%s", reg, value, hex_frame(req).c_str());
+          };
+
+          auto send_emu29_write10_ack = [&](uint16_t start, uint16_t count) {
+            std::vector<uint8_t> resp = {0x29, 0x10, (uint8_t) ((start >> 8) & 0xFF), (uint8_t) (start & 0xFF), (uint8_t) ((count >> 8) & 0xFF), (uint8_t) (count & 0xFF)};
+            uint16_t crc = calc_crc(resp);
+            resp.push_back(crc & 0xFF);
+            resp.push_back((crc >> 8) & 0xFF);
+
+            rs485_send_v48(resp, "emu29_write10_ack");
+            id(dd_emu_29_write_count)++;
+            id(dd_emu_29_last_ms) = millis();
+            ESP_LOGW("dd_emu_29", "TX emu WRITE10 ACK addr=0x29 start=%u count=%u frame=%s", start, count, hex_frame(resp).c_str());
+          };
+
+          // v97: serving Zone 2/3 panels (0x2A/0x2B). Uses the same proven TX routine
+          // (rs485_send_v48, DE-hold). "online" (dd_last_2a/2b) counted from READ REPLIES (like 0x29).
+          auto send_emu_zone_read03 = [&](uint8_t zaddr, uint16_t start, uint16_t count,
+                                          int temp_raw, int hum_raw, int sp_raw, int off_raw) {
+            if (count == 0 || count > 40) {
+              ESP_LOGW("dd_emu_z", "Nie odpowiadam READ03 0x%02X start=%u count=%u - count poza limitem", zaddr, start, count);
+              return;
+            }
+            std::vector<uint8_t> resp;
+            resp.push_back(zaddr);
+            resp.push_back(0x03);
+            resp.push_back((uint8_t) (count * 2));
+            for (uint16_t i = 0; i < count; i++) {
+              uint16_t reg = start + i;
+              int value = emu_zone_value(reg, zaddr, temp_raw, hum_raw, sp_raw, off_raw);
+              if (start == 2005 && count == 2) {          // most important panel presence query
+                if (reg == 2005) value = temp_raw;
+                if (reg == 2006) value = hum_raw;
+              }
+              uint16_t uvalue = (uint16_t) value;
+              resp.push_back((uvalue >> 8) & 0xFF);
+              resp.push_back(uvalue & 0xFF);
+            }
+            uint16_t crc = calc_crc(resp);
+            resp.push_back(crc & 0xFF);
+            resp.push_back((crc >> 8) & 0xFF);
+
+            rs485_send_v48(resp, "emu_zone_read03");
+            if (zaddr == 0x2A) id(dd_last_2a_read_ms) = millis();
+            else if (zaddr == 0x2B) id(dd_last_2b_read_ms) = millis();
+            ESP_LOGW("dd_emu_z", "emu READ03 resp addr=0x%02X start=%u count=%u frame=%s", zaddr, start, count, hex_frame(resp).c_str());
+          };
+
+          auto send_emu_zone_write06_ack = [&](uint8_t zaddr, const std::vector<uint8_t> &req, uint16_t reg, int value) {
+            rs485_send_v48(req, "emu_zone_write06_ack");   // ACK 0x06 = echo of the addr/reg/value frame
+            ESP_LOGW("dd_emu_z", "TX emu WRITE06 ACK addr=0x%02X reg=%u value=%d", zaddr, reg, value);
+          };
+
+          auto send_emu_zone_write10_ack = [&](uint8_t zaddr, uint16_t start, uint16_t count) {
+            std::vector<uint8_t> resp = {zaddr, 0x10,
+              (uint8_t) ((start >> 8) & 0xFF), (uint8_t) (start & 0xFF),
+              (uint8_t) ((count >> 8) & 0xFF), (uint8_t) (count & 0xFF)};
+            uint16_t crc = calc_crc(resp);
+            resp.push_back(crc & 0xFF);
+            resp.push_back((crc >> 8) & 0xFF);
+            rs485_send_v48(resp, "emu_zone_write10_ack");
+            ESP_LOGW("dd_emu_z", "TX emu WRITE10 ACK addr=0x%02X start=%u count=%u", zaddr, start, count);
+          };
+
+          auto rs485_send_33_v50 = [&](const std::vector<uint8_t> &data, const char *label) {
+            // v96 SAFETY: 0x1E (addr 30, pump machine room) is a REAL device on the bus.
+            // The emulator NEVER transmits on 0x1E (RX/monitor only). Hard guard: if some future
+            // path tries to TX on 0x1E -> we block it and log an error, to avoid colliding with the machine room.
+            if (!data.empty() && data[0] == 0x1E) {
+              ESP_LOGE("dd_rs485", "BEZPIECZNIK v96: zablokowano TX na 0x1E (maszynownia) label=%s - emulator nie nadaje na adres 30", label);
+              return;
+            }
+            // v55 IMMEDIATE PROVEN TX: kopia 1:1 udowodnionej rutyny rs485_send_v48 (0x29) oraz
+            // the manual 0x33 button - these DO transmit visibly (sniffer a11798 catches 29 03 04 00 E9
+            // oraz reczny 33 10 ... 14 97). KLUCZ: ZADNEGO delay()/busy-wait PRZED TX.
+            // v53 (delay(22) yield) and v54 (delayMicroseconds(22000)) had a pre-delay and the frames
+            // never reached the bus -> the pre-delay broke transmission. Panel 0x29 replies IMMEDIATELY
+            // and the boiler accepts it - so 0x33 also replies immediately.
+            // DE handled by the UART hardware (flow_control_pin): no pre-drive, no flush, no tail. The hardware
+            // asserts DE right before the start bit, so there is still no delay before TX, as required above.
+            id(dd_uart).write_array(data.data(), data.size());
+
+            id(dd_last_tx_ms) = millis();
+            id(dd_emu_33_ack_count)++;
+            id(dd_emu_33_last_ms) = id(dd_last_tx_ms);
+
+            ESP_LOGW("dd_emu_33", "v55 TX immediate-proven %s len=%u frame=%s", label, (unsigned) data.size(), hex_frame(data).c_str());
+          };
+
+          auto send_emu33_read_response = [&](uint8_t req_func, uint16_t start, uint16_t count) {
+            if (count == 0 || count > 40) {
+              ESP_LOGW("dd_emu_33", "v51 skip READ resp 0x33 start=%u count=%u - count poza limitem", start, count);
+              return;
+            }
+
+            std::vector<uint8_t> resp;
+            resp.push_back(0x33);
+            resp.push_back(req_func);
+            resp.push_back((uint8_t) (count * 2));
+
+            std::string values_json = "[";
+            for (uint16_t i = 0; i < count; i++) {
+              if (i > 0) values_json += ",";
+              uint16_t reg = start + i;
+              int value = emu33_value(reg);
+              uint16_t uvalue = (uint16_t) value;
+              resp.push_back((uvalue >> 8) & 0xFF);
+              resp.push_back(uvalue & 0xFF);
+              values_json += std::to_string((int16_t) uvalue);
+            }
+            values_json += "]";
+
+            uint16_t crc = calc_crc(resp);
+            resp.push_back(crc & 0xFF);
+            resp.push_back((crc >> 8) & 0xFF);
+
+            rs485_send_33_v50(resp, "emu33_read_resp");
+            id(dd_last_33_read_ms) = millis();  // v93: online = ODPOWIEDZIELISMY jako Dominus 0x33
+          };
+
+          auto send_emu33_write06_ack = [&](const std::vector<uint8_t> &req, uint16_t reg, int value) {
+            static uint32_t last_ack_ms = 0;
+            static uint16_t last_reg = 0;
+            static int last_value = 0;
+            uint32_t now_ack = millis();
+            if (last_reg == reg && last_value == value && (now_ack - last_ack_ms) < 120) {
+              ESP_LOGD("dd_emu_33", "v51 skip echo własnego/duplikatu WRITE06 ACK reg=%u value=%d", reg, value);
+              return;
+            }
+            last_ack_ms = now_ack;
+            last_reg = reg;
+            last_value = value;
+
+            rs485_send_33_v50(req, "emu33_write06_ack");
+          };
+
+          auto send_emu33_write10_ack = [&](uint16_t start, uint16_t count) {
+            std::vector<uint8_t> resp = {0x33, 0x10,
+              (uint8_t) ((start >> 8) & 0xFF), (uint8_t) (start & 0xFF),
+              (uint8_t) ((count >> 8) & 0xFF), (uint8_t) (count & 0xFF)};
+            uint16_t crc = calc_crc(resp);
+            resp.push_back(crc & 0xFF);
+            resp.push_back((crc >> 8) & 0xFF);
+
+            rs485_send_33_v50(resp, "emu33_write10_ack");
+          };
+
+          auto is_known_pdu = [&](uint8_t addr, uint16_t reg) -> bool {
+            if (addr == 0x1E) {
+              switch (reg) {
+                case 1:
+                case 2:
+                case 3:
+                case 4:
+                case 5:
+                case 6:
+                case 10:
+                case 11:
+                case 12:
+                case 13:
+                case 14:
+                case 15:
+                case 16:
+                case 17:
+                case 18:
+                case 19:
+                case 20:
+                case 21:
+                case 22:
+                case 23:
+                case 24:
+                case 25:
+                case 26:
+                case 27:
+                case 28:
+                case 29:
+                case 36:
+                case 37:
+                case 38:
+                case 40:
+                case 41:
+                case 42:
+                case 44:
+                case 45:
+                case 46:
+                  return true;
+                default:
+                  return false;
+              }
+            }
+
+            if (addr == 0x29 || addr == 0x33) {
+              switch (reg) {
+                case REG_MODE:
+                case 2001:
+                case 2002:
+                case 2005:
+                case 2006:
+                case REG_ZONE1_STATUS:
+                case REG_ZONE1_TEMP_OLD:
+                case REG_ZONE1_SETPOINT:
+                case REG_ZONE1_MAX:
+                case REG_ZONE1_OFFSET:
+                case REG_DHW_SETPOINT:
+                case 2090:
+                case 2100:
+                case 2103:
+                case REG_COMFORT_HEAT:
+                case REG_ECO_HEAT:
+                case REG_COMFORT_COOL:
+                case REG_ECO_COOL_COPY:
+                case REG_HUMIDITY:
+                case REG_SET_FLOW:
+                case REG_ZONE1_MAX_COPY:
+                case REG_ZONE1_OFFSET_COPY:
+                case 2290:
+                case REG_DHW_SETPOINT_COPY_1:
+                case REG_DHW_SETPOINT_COPY_2:
+                case REG_DHW_TEMP_COPY_2293:
+                case 2294:
+                case 2300:
+                case 2302:
+                case 2303:
+                case 2310:
+                case 2311:
+                case 2312:
+                case 2313:
+                case 2314:
+                case 2315:
+                case 2316:
+                case 2317:
+                case 2320:
+                case 2321:
+                case 2322:
+                case 2323:
+                case 2324:
+                case 2325:
+                case 2326:
+                case 2327:
+                case 2330:
+                case 2331:
+                case 2332:
+                case 2333:
+                case 2334:
+                case 2335:
+                case 2336:
+                case 2337:
+                case 2340:
+                case 2341:
+                case 2342:
+                case 2343:
+                case 2344:
+                case 2345:
+                case 2346:
+                case 2347:
+                case 2410:
+                case 2411:
+                case 2412:
+                case 2413:
+                case 2414:
+                case 2415:
+                case 2416:
+                case 2490:
+                case 2491:
+                case 2492:
+                case 2493:
+                case 2494:
+                case 2495:
+                case 2496:
+                case REG_ECO_COOL:
+                case REG_OUTSIDE_TEMP:
+                case 3003:
+                case REG_ZONE1_TEMP_COPY:
+                case 3010:
+                case 3011:
+                case 3012:
+                case 3013:
+                case 3014:
+                case REG_DHW_SETPOINT_COPY_3:
+                case REG_DHW_TEMP:
+                case 3031:
+                case 3042:
+                case 4199:
+                case 6102:
+                case 6105:
+                case 6107:
+                case 6150:
+                  return true;
+                default:
+                  return false;
+              }
+            }
+
+            return false;
+          };
+
+          auto valid_temp_x10 = [](int value) -> bool {
+            if (value == 32767 || value == -32768 || value == -1) return false;
+            if (value < -400 || value > 900) return false;
+            return true;
+          };
+
+          auto handle_pdu = [&](uint8_t addr, uint8_t func, uint16_t reg, int value, const char *source) {
+            // v1.2.0 - decoded registers + optional bus sniffer (before everything else, also before the 0x1E "return").
+            {
+              char kind = (source[0] == 'W') ? 'W' : (func == 0x04 ? 'I' : 'R');  // R = func03 reply, I = func04 reply, W = boiler write
+              struct SniffSens { uint8_t addr; char kind; uint16_t reg; sensor::Sensor *s; float scale; int last; bool seen; };
+              static SniffSens tbl[] = {
+                {0x29, 'W', 3003, id(sniff_29_w_3003), 0.1f, 0, false},
+                {0x29, 'W', 3011, id(sniff_29_w_3011), 0.1f, 0, false},
+                {0x29, 'W', 3012, id(sniff_29_w_3012), 0.1f, 0, false},
+                {0x29, 'W', 3013, id(sniff_29_w_3013), 0.1f, 0, false},
+                {0x29, 'W', 3014, id(sniff_29_w_3014), 0.1f, 0, false},
+                {0x29, 'W', 3015, id(sniff_29_w_3015), 0.1f, 0, false},
+                {0x33, 'W', 4199, id(sniff_33_w_4199), 1.0f, 0, false},
+                {0x1E, 'I', 3, id(sniff_1e_i_3), 0.1f, 0, false},
+                {0x1E, 'I', 4, id(sniff_1e_i_4), 0.1f, 0, false},
+                {0x1E, 'I', 5, id(sniff_1e_i_5), 0.1f, 0, false},
+                {0x1E, 'I', 6, id(sniff_1e_i_6), 0.1f, 0, false},
+                {0x1E, 'I', 10, id(sniff_1e_i_10), 0.1f, 0, false},
+                {0x1E, 'I', 11, id(sniff_1e_i_11), 1.0f, 0, false},
+                {0x1E, 'I', 13, id(sniff_1e_i_13), 0.1f, 0, false},
+                {0x1E, 'I', 14, id(sniff_1e_i_14), 1.0f, 0, false},
+                {0x1E, 'I', 16, id(sniff_1e_i_16), 1.0f, 0, false},
+                {0x1E, 'I', 17, id(sniff_1e_i_17), 0.1f, 0, false},
+                {0x1E, 'W', 20, id(sniff_1e_w_20), 0.1f, 0, false},
+                {0x1E, 'W', 21, id(sniff_1e_w_21), 0.1f, 0, false},
+                {0x1E, 'W', 22, id(sniff_1e_w_22), 0.1f, 0, false}
+              };
+              for (auto &e : tbl) {
+                if (e.addr == addr && e.kind == kind && e.reg == reg) {
+                  if (!e.seen || e.last != value) { e.last = value; e.seen = true; e.s->publish_state(value * e.scale); }
+                  break;
+                }
+              }
+              // v1.3.0 decoded zone-panel registers (0x29)
+              if (addr == 0x29) {
+                struct SniffTxt { char kind; uint16_t reg; text_sensor::TextSensor *t; uint8_t map; int last; bool seen; };
+                static SniffTxt ttbl[] = {
+                  {'W', 6102, id(panel_a31_termostat), 0, 0, false},
+                  {'W', 2090, id(piec_stan_programu), 1, 0, false},
+                };
+                for (auto &e : ttbl) {
+                  if (e.kind == kind && e.reg == reg) {
+                    if (!e.seen || e.last != value) {
+                      e.last = value; e.seen = true;
+                      const char *st = nullptr;
+                      if (e.map == 0) st = (value == 0) ? "RPT" : (value == 1) ? "RT" : (value == 2) ? "RP" : nullptr;
+                      else st = (value == 4) ? "Manual" : (value == 64) ? "Auto (comfort)" : (value == 128) ? "Auto (economy)" : nullptr;
+                      char sb[24];
+                      if (st == nullptr) { snprintf(sb, sizeof(sb), "Code %d", value); st = sb; }
+                      e.t->publish_state(st);
+                    }
+                    break;
+                  }
+                }
+                // Replies of a PHYSICAL panel (READ frames come only from other devices - our own TX is not heard)
+                // -> the controls mirror the panel; -1 (not set) is ignored.
+                if (kind == 'R' && reg == 6107 && (value == 0 || value == 1) && id(sw_punkt_rosy).state != (value == 1)) {
+                  id(sw_punkt_rosy).publish_state(value == 1);
+                }
+                if (kind == 'R' && reg == 6105 && (value == 0 || value == 1) &&
+                    (int) id(sel_modulacja_sonda).active_index().value_or(0) != value) {
+                  auto call = id(sel_modulacja_sonda).make_call(); call.set_index(value); call.perform();
+                }
+                if (kind == 'R' && reg == 2294 && (value == 0 || value == 1) &&
+                    (int) id(sel_programy_czasowe).active_index().value_or(0) != value) {
+                  auto call = id(sel_programy_czasowe).make_call(); call.set_index(value); call.perform();
+                }
+                if (kind == 'W' && reg == 6102 && value >= 0 && value <= 2 && value != id(panel_a31_raw)) {
+                  id(panel_a31_raw) = value;  // A31 belongs to the boiler - remember it to echo back
+                }
+                if (kind == 'W' && reg == 2001) {
+                  static int last2001 = -99999;
+                  if (value != last2001) {
+                    last2001 = value;
+                    id(piec_zadanie_cwu_oczek).publish_state((value & 0x01) != 0);
+                    id(piec_blad_aktywny_2001).publish_state((value & 0x04) != 0);
+                  }
+                }
+              }
+              // 0x1E heat-pump flags (W0 run request, I36 compressor, I38 fan, I40 request accepted), stage, firmware
+              if (addr == 0x1E) {
+                struct SniffBin { char kind; uint16_t reg; binary_sensor::BinarySensor *b; int last; bool seen; };
+                static SniffBin btbl[] = {
+                  {'W', 0, id(pc_zlecenie_pracy), 0, false},
+                  {'I', 36, id(pc_sprezarka_pracuje), 0, false},
+                  {'I', 38, id(pc_wentylator_pracuje), 0, false},
+                  {'I', 40, id(pc_zlecenie_przyjete), 0, false},
+                  {'I', 12, id(pc_funkcja_nocna), 0, false},  // v1.3.1: night function U11 (MIM echo of W2)
+                };
+                for (auto &b : btbl) {
+                  if (b.kind == kind && b.reg == reg) {
+                    if (!b.seen || b.last != value) { b.last = value; b.seen = true; b.b->publish_state(value != 0); }
+                    break;
+                  }
+                }
+                if (kind == 'I' && reg == 12) {  // v1.3.1: capacity limit %, 0 = no limit -> 100 %
+                  static int last12 = -99999;
+                  if (value != last12) { last12 = value; id(sniff_1e_i_12).publish_state(value == 0 ? 100.0f : (float) value); }
+                }
+                if (kind == 'I' && reg == 19) {  // operating stage: 1 standby, 2 starting, 3 running
+                  static int last19 = -99999;
+                  if (value != last19) {
+                    last19 = value;
+                    const char *st = (value == 1) ? "Standby" : (value == 2) ? "Starting" : (value == 3) ? "Running" : nullptr;
+                    char sb[24];
+                    if (st == nullptr) { snprintf(sb, sizeof(sb), "Code %d", value); st = sb; }
+                    id(pc_etap_pracy).publish_state(st);
+                  }
+                }
+                // I22-I29 firmware: 2 parts per register (decimal pairs). I22/23 outdoor main board, I24/25 inverter,
+                // I26/27 inverter memory, I28/29 interface board MIM (register order != manual D-code order).
+                if (kind == 'I' && reg >= 22 && reg <= 29) {
+                  static int fw[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+                  int i = reg - 22;
+                  if (fw[i] != value) {
+                    fw[i] = value;
+                    int m = i / 2;
+                    if (fw[m * 2] >= 0 && fw[m * 2 + 1] >= 0) {
+                      char vb[20];
+                      snprintf(vb, sizeof(vb), "%02d.%02d.%02d.%02d", fw[m * 2] / 100, fw[m * 2] % 100, fw[m * 2 + 1] / 100, fw[m * 2 + 1] % 100);
+                      text_sensor::TextSensor *ts[4] = {id(pc_fw_odu_main), id(pc_fw_inv_fw), id(pc_fw_inv_mem), id(pc_fw_interface)};
+                      ts[m]->publish_state(vb);
+                    }
+                  }
+                }
+              }
+              // 2300 = boiler clock [day of week 3b][hour 5b][minute 8b], 1 = Mon .. 7 = Sun (CET, no DST).
+              // Any frame on 0x29: a boiler WRITE, or the physical panel's READ reply (the boiler also reads 2300 from
+              // the panel - the emulator serves it). Some setups only carry the READ reply.
+              if (addr == 0x29 && (kind == 'W' || kind == 'R') && reg == 2300) {
+                static int last2300 = -99999;
+                if (value != last2300) {
+                  last2300 = value;
+                  uint16_t u = (uint16_t) value;
+                  static const char *DN[8] = {"?", "Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"};
+                  char cbuf[24];
+                  snprintf(cbuf, sizeof(cbuf), "%s %02u:%02u", DN[(u >> 13) & 7], (unsigned) ((u >> 8) & 0x1F), (unsigned) (u & 0xFF));
+                  id(sniff_clock_2300).publish_state(cbuf);
+                }
+              }
+              if (id(dd_sniff_enabled)) {
+                uint32_t key = ((uint32_t) addr << 24) | ((uint32_t) (uint8_t) kind << 16) | reg;
+                uint32_t h = (key * 2654435761u) >> 23;  // 9 bits -> 0..511
+                SniffEnt *slot = nullptr;
+                bool found = false;
+                for (int p = 0; p < 512; p++) {
+                  SniffEnt &e = sniff_tab[(h + p) & 511];
+                  if (!e.used) { slot = &e; break; }
+                  if (e.k == key) { slot = &e; found = true; break; }
+                }
+                if (slot != nullptr && !found) {
+                  if (sniff_used < 400) {
+                    slot->used = true; slot->k = key; slot->v = (int16_t) value; slot->n = 0;
+                    sniff_used++;
+                    id(dd_sniff_regs) = sniff_used;
+                    ESP_LOGI("sniff", "NEW %02X %c %u = %d", (unsigned) addr, kind, (unsigned) reg, value);
+                  }
+                } else if (found && slot->v != (int16_t) value) {
+                  int old = slot->v;
+                  slot->v = (int16_t) value;
+                  if (slot->n < 65535) slot->n++;
+                  id(dd_sniff_changes)++;
+                  ESP_LOGI("sniff", "CHG %02X %c %u %d -> %d n=%u", (unsigned) addr, kind, (unsigned) reg, old, value, (unsigned) slot->n);
+                  if (slot->n <= 20) {
+                    char buf[72];
+                    snprintf(buf, sizeof(buf), "0x%02X %c %u: %d -> %d (chg %u)", (unsigned) addr, kind, (unsigned) reg, old, value, (unsigned) slot->n);
+                    id(sniff_last_change).publish_state(buf);
+                  }
+                }
+              }
+            }
+            // v71: boiler fault monitoring. The boiler broadcasts the fault code in 2100 (0=none) and
+            // 2101 (reset/flags) to 0x33 and 0x29 (confirmed by capture). We capture regardless
+            // of emulation mode - works in pure sniffing too. Descriptions: anomalies[] (LBL).
+            if (reg == 2100) id(dd_err_code) = value;
+            else if (reg == 2101) id(dd_err_2101) = value;
+            else if (reg == 2010) {
+              // v73/v97: per-zone status/phase. 0x2A->Zone 2, 0x2B->Zone 3, rest (0x29/0x33)->Zone 1.
+              if (addr == 0x2A) id(dd_zone2_status_raw) = value;
+              else if (addr == 0x2B) id(dd_zone3_status_raw) = value;
+              else id(dd_zone1_status_raw) = value;
+            }
+            // ------------------------------------------------------------
+            // 0x1E - technical / different register spaces
+            // Ten adres ma inne znaczenie dla func 0x03, 0x04, 0x06 i 0x10.
+            // We don't publish it to HA entities, to avoid mixing values in one sensor.
+            // Kept only in logs and discovery.
+            // ------------------------------------------------------------
+            if (addr == 0x1E) {
+              // v86: 0x1E (pump machine room) - monitoring belongs to the sniffer (immergas-dd-sniffer).
+              // The emulator IGNORES 0x1E: no decode, no log, no emulation.
+              return;
+            }
+
+            // v101: "Panel" source (slot 1) for Zone 2/3 = real temp/humidity PDU of the physical panel
+            // 0x2A/0x2B (when connected and transmitting). Feeds the slot-1 buffer; when Panel selected (idx==1) -> to output.
+            if (addr == 0x2A || addr == 0x2B) {
+              bool z2 = (addr == 0x2A);
+              if (reg == 2005 || reg == REG_ZONE1_TEMP_COPY || reg == REG_ZONE1_TEMP_OLD) {
+                if (valid_temp_x10(value)) {
+                  if (z2) { id(ha_temp_raw_z2_1) = value; if (id(temp_src_z2_idx) == 1) id(ha_room_temp_2_raw) = value; }
+                  else    { id(ha_temp_raw_z3_1) = value; if (id(temp_src_z3_idx) == 1) id(ha_room_temp_3_raw) = value; }
+                }
+              } else if (reg == 2006 || reg == 3010) {
+                if (value > 0 && value <= 100) {
+                  if (z2) { id(ha_hum_raw_z2_1) = value; if (id(hum_src_z2_idx) == 1) id(ha_room_humidity_2_raw) = value; }
+                  else    { id(ha_hum_raw_z3_1) = value; if (id(hum_src_z3_idx) == 1) id(ha_room_humidity_3_raw) = value; }
+                }
+              }
+            }
+
+            // ------------------------------------------------------------
+            // Tryb pracy systemu
+            // PDU 2000 / 0x07D0:
+            // 0 = Standby, 1 = Summer/DHW, 2 = Cooling, 3 = Winter/CH+DHW
+            // 0x33 usually changes first, 0x29 is the copy/execution.
+            // ------------------------------------------------------------
+            if ((addr == 0x29 || addr == 0x33) && reg == REG_MODE) {
+              // The boiler writes back the current mode (reported state). A change made elsewhere (panel) is
+              // adopted as the mode the Dominus serves; HA commands and stale echoes are arbitrated (lww_guard.h).
+              id(operating_mode_reported) = value;
+              if (lww::adopt(lww::OPERATING_MODE, "operating_mode", source, addr, id(operating_mode_raw), value)) {
+                id(operating_mode_raw) = value;
+              }
+
+              const char *mode_name = "Nieznany";
+              if (value == 0) mode_name = "Standby";
+              else if (value == 1) mode_name = "Summer DHW";
+              else if (value == 2) mode_name = "Cooling";
+              else if (value == 3) mode_name = "Winter CH+DHW";
+
+              ESP_LOGI("dd_value", "%s Tryb pracy addr=0x%02X PDU 2000 = %d / %s", source, addr, value, mode_name);
+              return;
+            }
+
+
+            // ------------------------------------------------------------
+            // Zone 1 temperature
+            // ------------------------------------------------------------
+            if (addr == 0x29 && (reg == 2005 || reg == REG_ZONE1_TEMP_COPY)) {
+              if (!valid_temp_x10(value)) {
+                ESP_LOGW("dd_value", "%s addr=0x29 Zone1 temp PDU %u INVALID = %d / 0x%04X - ignoruję", source, reg, value, (uint16_t) value);
+                return;
+              }
+              id(zone1_temp_raw) = value;
+              id(zone1_temp_sensor).publish_state(value / 10.0f);
+              id(ha_temp_raw_1) = value;  // v101: "Panel" source = real PDU 2005 of the physical panel 0x29
+              if (id(temp_src_idx) == 1) id(ha_room_temp_raw) = value;
+              ESP_LOGI("dd_value", "%s addr=0x29 Zone1 temp PDU %u = %d / %.1f°C", source, reg, value, value / 10.0f);
+              return;
+            }
+
+            if (reg == REG_ZONE1_TEMP_OLD && addr != 0x2A && addr != 0x2B) {  // v103: temp 0x2A/0x2B -> blok "Panel" wyzej
+              if (!valid_temp_x10(value)) return;
+              id(zone1_temp_raw) = value;
+              id(zone1_temp_sensor).publish_state(value / 10.0f);
+              return;
+            }
+
+            // ------------------------------------------------------------
+            // Active setpoint / U03
+            // ------------------------------------------------------------
+            if (reg == REG_ZONE1_SETPOINT) {
+              if (addr == 0x2A) { if (value != id(zone2_setpoint_last_bus)) { id(zone2_setpoint_raw) = value; id(zone2_setpoint_number).publish_state(value / 10.0f); } id(zone2_setpoint_last_bus) = value; }  // v118 last-writer-wins
+              else if (addr == 0x2B) { if (value != id(zone3_setpoint_last_bus)) { id(zone3_setpoint_raw) = value; id(zone3_setpoint_number).publish_state(value / 10.0f); } id(zone3_setpoint_last_bus) = value; }  // v118 last-writer-wins
+              else if (lww::adopt(lww::ZONE1_SETPOINT, "zone1_setpoint", source, addr, id(zone1_setpoint_raw), value)) { id(zone1_setpoint_raw) = value; id(zone1_setpoint_number).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
+              ESP_LOGI("dd_value", "%s addr=0x%02X setpoint PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
+              return;
+            }
+
+            if (reg == REG_ZONE1_OFFSET || reg == REG_ZONE1_OFFSET_COPY) {
+              if (addr == 0x2A) { id(zone2_offset_raw) = value; id(zone2_offset_number).publish_state(value / 10.0f); }
+              else if (addr == 0x2B) { id(zone3_offset_raw) = value; id(zone3_offset_number).publish_state(value / 10.0f); }
+              else if (lww::adopt(lww::ZONE1_OFFSET, "zone1_offset", source, addr, id(zone1_offset_raw), value)) { id(zone1_offset_raw) = value; id(zone1_offset_number).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
+              ESP_LOGI("dd_value", "%s addr=0x%02X offset PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
+              return;
+            }
+
+            // ------------------------------------------------------------
+            // DHW / external
+            // ------------------------------------------------------------
+            if (reg == REG_DHW_SETPOINT_COPY_1 || reg == REG_DHW_SETPOINT_COPY_2 || reg == REG_DHW_SETPOINT_COPY_3) {
+              // Copies (2291/2292/3015) are never adopted. They lag the master 2095 during propagation (adopting them
+              // made the HA value flip 57 -> 55 -> 57), and 3015 is the boiler's ACTIVE setpoint - 60 C during the
+              // anti-legionella cycle (v1.2.0 fix: adopting it left the setpoint stuck at 60).
+              ESP_LOGD("dd_value", "%s DHW setpoint copy PDU %u = %d (ignored)", source, reg, value);
+              return;
+            }
+            if (reg == REG_DHW_SETPOINT) {
+              // Master DHW setpoint 2095: arbitrated like the other served registers (lww_guard.h). A change made on
+              // the panel reaches the Dominus as a boiler write, so writes are adopted too.
+              if (lww::adopt(lww::DHW_SETPOINT, "dhw_setpoint", source, addr, id(cwu_setpoint_raw), value)) {
+                id(cwu_setpoint_raw) = value;
+                id(cwu_setpoint_number).publish_state(value / 10.0f);
+              }
+              ESP_LOGI("dd_value", "%s DHW setpoint PDU %u = %d / %.1f°C", source, reg, value, value / 10.0f);
+              return;
+            }
+
+            if (reg == REG_DHW_TEMP) {
+              id(dhw_temp_raw) = value;
+              id(dhw_temp_sensor).publish_state(value / 10.0f);
+              ESP_LOGI("dd_value", "%s DHW temp PDU %u = %d / %.1f°C", source, reg, value, value / 10.0f);
+              return;
+            }
+
+            if (reg == REG_OUTSIDE_TEMP) {
+              id(outside_temp_raw) = value;
+              id(outside_temp_sensor).publish_state(value / 10.0f);
+              ESP_LOGI("dd_value", "%s Outside temp PDU %u = %d / %.1f°C", source, reg, value, value / 10.0f);
+              return;
+            }
+
+            // ------------------------------------------------------------
+            // Dominus - sliders/settings
+            // ------------------------------------------------------------
+            if (reg == REG_COMFORT_HEAT) {
+              if (addr == 0x2A) { id(dominus_comfort_heat_z2_raw) = value; id(number_dominus_comfort_heat_z2).publish_state(value / 10.0f); }
+              else if (addr == 0x2B) { id(dominus_comfort_heat_z3_raw) = value; id(number_dominus_comfort_heat_z3).publish_state(value / 10.0f); }
+              else if (lww::adopt(lww::COMFORT_HEAT, "dominus_comfort_heat", source, addr, id(dominus_comfort_heat_raw), value)) { id(dominus_comfort_heat_raw) = value; id(number_dominus_comfort_heat).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
+              ESP_LOGI("dd_value", "%s addr=0x%02X Set Comfort Heat PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
+              return;
+            }
+
+            if (reg == REG_ECO_HEAT) {
+              if (addr == 0x2A) { id(dominus_eco_heat_z2_raw) = value; id(number_dominus_eco_heat_z2).publish_state(value / 10.0f); }
+              else if (addr == 0x2B) { id(dominus_eco_heat_z3_raw) = value; id(number_dominus_eco_heat_z3).publish_state(value / 10.0f); }
+              else if (lww::adopt(lww::ECO_HEAT, "dominus_eco_heat", source, addr, id(dominus_eco_heat_raw), value)) { id(dominus_eco_heat_raw) = value; id(number_dominus_eco_heat).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
+              ESP_LOGI("dd_value", "%s addr=0x%02X Set Eco Heat PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
+              return;
+            }
+
+            if (reg == REG_COMFORT_COOL) {
+              if (addr == 0x2A) { id(dominus_comfort_cool_z2_raw) = value; id(number_dominus_comfort_cool_z2).publish_state(value / 10.0f); }
+              else if (addr == 0x2B) { id(dominus_comfort_cool_z3_raw) = value; id(number_dominus_comfort_cool_z3).publish_state(value / 10.0f); }
+              else if (lww::adopt(lww::COMFORT_COOL, "dominus_comfort_cool", source, addr, id(dominus_comfort_cool_raw), value)) { id(dominus_comfort_cool_raw) = value; id(number_dominus_comfort_cool).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
+              ESP_LOGI("dd_value", "%s addr=0x%02X Set Comfort Cool PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
+              return;
+            }
+
+            if (reg == REG_ECO_COOL_COPY || reg == REG_ECO_COOL) {
+              if (addr == 0x2A) { id(dominus_eco_cool_z2_raw) = value; id(number_dominus_eco_cool_z2).publish_state(value / 10.0f); }
+              else if (addr == 0x2B) { id(dominus_eco_cool_z3_raw) = value; id(number_dominus_eco_cool_z3).publish_state(value / 10.0f); }
+              else if (lww::adopt(lww::ECO_COOL, "dominus_eco_cool", source, addr, id(dominus_eco_cool_raw), value)) { id(dominus_eco_cool_raw) = value; id(number_dominus_eco_cool).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
+              ESP_LOGI("dd_value", "%s addr=0x%02X Set Eco Cool PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
+              return;
+            }
+
+            if (reg == REG_HUMIDITY) {
+              if (addr == 0x2A) { id(dominus_humidity_z2_raw) = value; id(number_dominus_humidity_z2).publish_state(value); }
+              else if (addr == 0x2B) { id(dominus_humidity_z3_raw) = value; id(number_dominus_humidity_z3).publish_state(value); }
+              else if (lww::adopt(lww::HUMIDITY, "dominus_humidity", source, addr, id(dominus_humidity_raw), value)) { id(dominus_humidity_raw) = value; id(number_dominus_humidity).publish_state(value); }  // arbitrated (lww_guard.h)
+              ESP_LOGI("dd_value", "%s addr=0x%02X Set Umidity PDU %u = %d%%", source, addr, reg, value);
+              return;
+            }
+
+            if (reg == REG_SET_FLOW) {
+              if (addr == 0x2A) { id(dominus_set_flow_z2_raw) = value; id(number_dominus_set_flow_z2).publish_state(value / 10.0f); }
+              else if (addr == 0x2B) { id(dominus_set_flow_z3_raw) = value; id(number_dominus_set_flow_z3).publish_state(value / 10.0f); }
+              else if (lww::adopt(lww::SET_FLOW, "dominus_set_flow", source, addr, id(dominus_set_flow_raw), value)) { id(dominus_set_flow_raw) = value; id(number_dominus_set_flow).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
+              ESP_LOGI("dd_value", "%s addr=0x%02X Set Flow PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
+              return;
+            }
+
+            // ------------------------------------------------------------
+            // 0x29 diagnostics
+            // ------------------------------------------------------------
+            if (addr == 0x29 && reg == 2006) {
+              id(pdu_29_2006_raw) = value;
+              id(sensor_zone1_humidity).publish_state(value);
+              id(ha_hum_raw_1) = value;  // v101: "Panel" source = real PDU 2006 of the physical panel 0x29
+              if (id(hum_src_idx) == 1) id(ha_room_humidity_raw) = value;
+              ESP_LOGI("dd_value", "%s Wilgotność Strefy 1 PDU 2006 = %d%%", source, value);
+              return;
+            }
+            if (addr == 0x29 && reg == 3010) {
+              // v77: 3010 = copy of Zone 1 humidity; we update the main sensor only.
+              if (value > 0 && value <= 100) id(sensor_zone1_humidity).publish_state(value);
+              ESP_LOGI("dd_value", "%s Wilgotność Strefy 1 PDU 3010 = %d%%", source, value);
+              return;
+            }
+            if (addr == 0x29 && reg == 2300) {
+              id(pdu_29_2300_raw) = value;
+              ESP_LOGD("dd_value", "%s Czas/licznik sterownika raw PDU 2300 = %d / 0x%04X", source, value, (uint16_t) value);
+              return;
+            }
+            if (addr == 0x29 && reg == 2302) {
+              id(pdu_29_2302_raw) = value;
+              uint16_t raw = (uint16_t) value;
+              int day = (raw >> 8) & 0xFF;
+              int month = raw & 0xFF;
+              ESP_LOGI("dd_value", "%s Data sterownika PDU 2302 = %d / 0x%04X -> %02d.%02d", source, value, (uint16_t) value, day, month);
+              return;
+            }
+            if (addr == 0x29 && reg == 2303) {
+              id(pdu_29_2303_raw) = value;
+              ESP_LOGI("dd_value", "%s Rok sterownika PDU 2303 = %d", source, value);
+              return;
+            }
+            if (addr == 0x29 && reg == REG_DHW_TEMP_COPY_2293) { id(pdu_29_2293_raw) = value; return; }
+            if (addr == 0x29 && reg == 3011) { id(pdu_29_3011_raw) = value; return; }
+            if (addr == 0x29 && reg == 3012) { id(pdu_29_3012_raw) = value; return; }
+            if (addr == 0x29 && reg == 3013) { id(pdu_29_3013_raw) = value; return; }
+            if (addr == 0x29 && reg == 3014) { id(pdu_29_3014_raw) = value; return; }
+            if (addr == 0x29 && reg == 3031) { id(pdu_29_3031_raw) = value; id(sensor_pdu_29_3031_version).publish_state(value / 100.0f); return; }
+            if (addr == 0x29 && reg == 3042) { id(pdu_29_3042_raw) = value; id(sensor_pdu_29_3042_version).publish_state(value / 100.0f); return; }
+            if (addr == 0x2A && reg == 3042) { id(pdu_2a_version_raw) = value; id(sensor_panel2_version).publish_state(value / 100.0f); return; }
+            if (addr == 0x2B && reg == 3042) { id(pdu_2b_version_raw) = value; id(sensor_panel3_version).publish_state(value / 100.0f); return; }
+
+            // FIX chrono: the boiler propagates schedule changes made on another device (e.g. the physical panel)
+            // by WRITING them to 0x33. Before, these writes were dropped: the emulator kept serving the old HA values
+            // and the boiler reverted the panel. Last-writer-wins per register (like the v117 setpoints): adopt a bus
+            // value only when it differs from the last one seen on the bus, so periodic re-writes of an old value
+            // can't undo a fresh HA change. Hi byte bits 0xE0 = "modified" flag set by the panel -> masked.
+            if (addr == 0x33 && (func == 0x06 || func == 0x10) && reg >= 2310 && reg <= 2496) {
+              static int chrono_last_bus[187];
+              static bool chrono_init = false;
+              if (!chrono_init) { for (auto &v : chrono_last_bus) v = INT32_MIN; chrono_init = true; }
+              int &last = chrono_last_bus[reg - 2310];
+              if (value == last) return;
+              last = value;
+
+              if (reg <= 2347 && (reg % 10) <= 7) {
+                datetime::TimeEntity *cal[4][8] = {
+                  {id(dt_cal1_f1_on), id(dt_cal1_f1_off), id(dt_cal1_f2_on), id(dt_cal1_f2_off), id(dt_cal1_f3_on), id(dt_cal1_f3_off), id(dt_cal1_f4_on), id(dt_cal1_f4_off)},
+                  {id(dt_cal2_f1_on), id(dt_cal2_f1_off), id(dt_cal2_f2_on), id(dt_cal2_f2_off), id(dt_cal2_f3_on), id(dt_cal2_f3_off), id(dt_cal2_f4_on), id(dt_cal2_f4_off)},
+                  {id(dt_cal3_f1_on), id(dt_cal3_f1_off), id(dt_cal3_f2_on), id(dt_cal3_f2_off), id(dt_cal3_f3_on), id(dt_cal3_f3_off), id(dt_cal3_f4_on), id(dt_cal3_f4_off)},
+                  {id(dt_cal4_f1_on), id(dt_cal4_f1_off), id(dt_cal4_f2_on), id(dt_cal4_f2_off), id(dt_cal4_f3_on), id(dt_cal4_f3_off), id(dt_cal4_f4_on), id(dt_cal4_f4_off)}
+                };
+                uint8_t hh = ((uint16_t) value >> 8) & 0x1F;
+                uint8_t mm = (uint16_t) value & 0xFF;
+                if (hh > 23 || mm > 59) return;
+                datetime::TimeEntity *t = cal[(reg - 2310) / 10][(reg - 2310) % 10];
+                if (t->hour != hh || t->minute != mm) {
+                  auto call = t->make_call();
+                  call.set_hour(hh);
+                  call.set_minute(mm);
+                  call.set_second(0);
+                  call.perform();
+                  ESP_LOGW("dd_chrono", "BUS->HA PDU %u (cal%d range%d %s) = %02u:%02u", reg,
+                           (reg - 2310) / 10 + 1, ((reg - 2310) % 10) / 2 + 1, ((reg % 2) == 0) ? "ON" : "OFF", hh, mm);
+                }
+                return;
+              }
+
+              // Day -> calendar assignments: Zone 1 (2410-2416), Zone 2 (2420-2426), Zone 3 (2430-2436), DHW (2490-2496).
+              select::Select *days = nullptr;
+              if (reg >= 2410 && reg <= 2416) { select::Select *s[7] = {id(sel_weekday_1), id(sel_weekday_2), id(sel_weekday_3), id(sel_weekday_4), id(sel_weekday_5), id(sel_weekday_6), id(sel_weekday_7)}; days = s[reg - 2410]; }
+              else if (reg >= 2420 && reg <= 2426) { select::Select *s[7] = {id(sel_weekday_z2_1), id(sel_weekday_z2_2), id(sel_weekday_z2_3), id(sel_weekday_z2_4), id(sel_weekday_z2_5), id(sel_weekday_z2_6), id(sel_weekday_z2_7)}; days = s[reg - 2420]; }
+              else if (reg >= 2430 && reg <= 2436) { select::Select *s[7] = {id(sel_weekday_z3_1), id(sel_weekday_z3_2), id(sel_weekday_z3_3), id(sel_weekday_z3_4), id(sel_weekday_z3_5), id(sel_weekday_z3_6), id(sel_weekday_z3_7)}; days = s[reg - 2430]; }
+              else if (reg >= 2490 && reg <= 2496) { select::Select *s[7] = {id(sel_dhw_weekday_1), id(sel_dhw_weekday_2), id(sel_dhw_weekday_3), id(sel_dhw_weekday_4), id(sel_dhw_weekday_5), id(sel_dhw_weekday_6), id(sel_dhw_weekday_7)}; days = s[reg - 2490]; }
+              if (days != nullptr && value >= 1 && value <= 4) {
+                auto cur = days->active_index();
+                if (!cur.has_value() || (int) cur.value() != value - 1) {
+                  auto call = days->make_call();
+                  call.set_index(value - 1);
+                  call.perform();
+                  ESP_LOGW("dd_chrono", "BUS->HA PDU %u (day -> calendar) = Calendar %d", reg, value);
+                }
+              }
+              return;
+            }
+
+            if (is_known_pdu(addr, reg)) {
+              ESP_LOGD("dd_known", "%s known addr=0x%02X PDU %u = %d / 0x%04X", source, addr, reg, value, (uint16_t) value);
+              return;
+            }
+
+            ESP_LOGD("dd_unknown", "%s unknown addr=0x%02X PDU %u / 0x%04X = %d / 0x%04X", source, addr, reg, reg, value, (uint16_t) value);
+          };
+
+          bool got_rx = false;
+          while (id(dd_uart).available()) {
+            uint8_t b;
+            if (id(dd_uart).read_byte(&b)) {
+              rx.push_back(b);
+              got_rx = true;
+            }
+          }
+
+          if (got_rx) {
+            id(dd_last_rx_ms) = millis();
+          }
+
+          if (rx.size() > 256) {
+            ESP_LOGW("dd_rx", "RX buffer too large, clearing");
+            rx.clear();
+            return;
+          }
+
+          while (rx.size() >= 4) {
+            resync_rx_prefix();
+            if (rx.size() < 4) break;
+
+            int len = expected_len(rx);
+            if (len == 0) {
+              // If the buffer holds a valid start of a later frame, jump to it.
+              resync_rx_prefix();
+              if (rx.size() > 96) {
+                rx.erase(rx.begin(), rx.end() - 3);
+              }
+              break;
+            }
+            if (rx.size() < (size_t) len) break;
+
+            std::vector<uint8_t> frame(rx.begin(), rx.begin() + len);
+
+            if (!crc_ok(frame)) {
+              id(dd_last_crc_bad_ms) = millis();
+              id(dd_crc_bad_count)++;
+              rx.erase(rx.begin());
+              continue;
+            }
+
+            rx.erase(rx.begin(), rx.begin() + len);
+
+            uint8_t addr = frame[0];
+            uint8_t func = frame[1];
+            bool emu33_write10_ack_pre_sent = false;
+
+            // v93: "online" counted from REPLIES (the device answers), NOT from the boiler's query.
+            // Our emulation -> set in send_emu29/33_read_response; a physical device ->
+            // w galezi read-response ponizej. Poprzednio tu (zapytanie) = falszywe "polaczono".
+            // v94: 0x1E (addr 30, machine room ALWAYS present) - activity = bus alive ("Modbus connection").
+            if (addr == 0x1E) id(dd_last_1e_read_ms) = millis();
+
+            // v52: Dominus 0x33 - replies with a natural slave turnaround, before heavy logging/MQTT.
+            if (addr == 0x33 && (func == 0x03 || func == 0x04) && len == 8 && emulator_33_enabled()) {
+              uint16_t start = ((uint16_t) frame[2] << 8) | frame[3];
+              uint16_t count = ((uint16_t) frame[4] << 8) | frame[5];
+              if (func == 0x03) last_start_03[addr] = start;
+              else last_start_04[addr] = start;
+
+              send_emu33_read_response(func, start, count);
+
+              ESP_LOGI("dd_rx", "addr=0x%02X func=0x%02X len=%d crc=OK frame=%s", addr, func, len, hex_frame(frame).c_str());
+              ESP_LOGI("dd_decode", "READ req addr=0x%02X func=0x%02X start=%u / 0x%04X count=%u", addr, func, start, start, count);
+              continue;
+            }
+
+            if (addr == 0x33 && func == 0x06 && len == 8 && emulator_33_enabled()) {
+              uint16_t reg = ((uint16_t) frame[2] << 8) | frame[3];
+              uint16_t uvalue = ((uint16_t) frame[4] << 8) | frame[5];
+              int value = (int16_t) uvalue;
+              bool known_write06 = (reg == REG_OUTSIDE_TEMP || reg == REG_DHW_TEMP || reg == 3031 || reg == 4199);
+              if (known_write06) {
+                send_emu33_write06_ack(frame, reg, value);
+              }
+            }
+
+            if (addr == 0x33 && func == 0x10 && len >= 11 && emulator_33_enabled()) {
+              uint16_t start = ((uint16_t) frame[2] << 8) | frame[3];
+              uint16_t count = ((uint16_t) frame[4] << 8) | frame[5];
+              uint8_t byte_count = frame[6];
+              int values = byte_count / 2;
+              if (start == 2001 && count == 2 && values >= 2) {
+                uint16_t v0 = ((uint16_t) frame[7] << 8) | frame[8];
+                uint16_t v1 = ((uint16_t) frame[9] << 8) | frame[10];
+                if (v0 == 12 && v1 == 0) {
+                  id(dd_emu_33_probe_count)++;
+                }
+              }
+              send_emu33_write10_ack(start, count);
+              emu33_write10_ack_pre_sent = true;
+              // FIX: the ACK is already queued to the UART, so the payload can be processed now. Before, this fast
+              // path dropped every FC16 write to 0x33 (2015-2017 setpoint/offset, 2214-2218, schedules 2310-2496,
+              // ...): the boiler propagates changes made on another device (e.g. the physical panel) by writing them
+              // to the Dominus, the emulator kept serving the old values and the boiler reverted the change.
+              for (int i = 0; i < values && (8 + i * 2) < (int) len - 2; i++) {
+                uint16_t uv = ((uint16_t) frame[7 + i * 2] << 8) | frame[8 + i * 2];
+                handle_pdu(0x33, 0x10, start + i, (int16_t) uv, "WRITE10");
+              }
+              // v56: KEY - like the 0x29 fast-path we continue IMMEDIATELY. The 0x29 path worked,
+              // the 0x33 path (v52-v55) did NOT - the only structural difference was this missing continue:
+              // 0x33 went on through heavy processing of the same frame in the RX loop, which
+              // apparently blocked the actual transmission. Here we exit right after the ACK.
+              continue;
+            }
+
+            // v48: if the boiler queries the emulated panel 0x29, reply IMMEDIATELY before heavy logging.
+            // The TX frame must fit the master's short reply window on D+/D-.
+            if (addr == 0x29 && func == 0x03 && len == 8 && emulator_29_enabled()) {
+              uint16_t start = ((uint16_t) frame[2] << 8) | frame[3];
+              uint16_t count = ((uint16_t) frame[4] << 8) | frame[5];
+              last_start_03[addr] = start;
+
+              send_emu29_read03_response(start, count);
+
+              ESP_LOGI("dd_rx", "addr=0x%02X func=0x%02X len=%d crc=OK frame=%s", addr, func, len, hex_frame(frame).c_str());
+              if (addr == 0x29) {
+                ESP_LOGI("dd_decode", "READ req addr=0x%02X func=0x%02X start=%u / 0x%04X count=%u", addr, func, start, start, count);
+              }
+
+              continue;
+            }
+
+            // v97: Zone 2 panel (0x2A) READ03 - fast-path like 0x29, values from Zone 2 globals.
+            if (addr == 0x2A && func == 0x03 && len == 8 && emulator_2a_enabled()) {
+              uint16_t start = ((uint16_t) frame[2] << 8) | frame[3];
+              uint16_t count = ((uint16_t) frame[4] << 8) | frame[5];
+              last_start_03[addr] = start;
+              send_emu_zone_read03(0x2A, start, count,
+                                   id(ha_room_temp_2_raw), id(ha_room_humidity_2_raw),
+                                   id(zone2_setpoint_raw), id(zone2_offset_raw));
+              ESP_LOGI("dd_rx", "addr=0x2A func=0x03 len=%d crc=OK frame=%s", len, hex_frame(frame).c_str());
+              continue;
+            }
+
+            // v97: Zone 3 panel (0x2B) READ03 - fast-path like 0x29, values from Zone 3 globals.
+            if (addr == 0x2B && func == 0x03 && len == 8 && emulator_2b_enabled()) {
+              uint16_t start = ((uint16_t) frame[2] << 8) | frame[3];
+              uint16_t count = ((uint16_t) frame[4] << 8) | frame[5];
+              last_start_03[addr] = start;
+              send_emu_zone_read03(0x2B, start, count,
+                                   id(ha_room_temp_3_raw), id(ha_room_humidity_3_raw),
+                                   id(zone3_setpoint_raw), id(zone3_offset_raw));
+              ESP_LOGI("dd_rx", "addr=0x2B func=0x03 len=%d crc=OK frame=%s", len, hex_frame(frame).c_str());
+              continue;
+            }
+
+            if (addr == 0x29) {
+              ESP_LOGI("dd_rx", "addr=0x%02X func=0x%02X len=%d crc=OK frame=%s", addr, func, len, hex_frame(frame).c_str());
+            }
+
+            if ((func == 0x03 || func == 0x04) && len == 8) {
+              uint16_t start = ((uint16_t) frame[2] << 8) | frame[3];
+              uint16_t count = ((uint16_t) frame[4] << 8) | frame[5];
+              if (func == 0x03) last_start_03[addr] = start;
+              else last_start_04[addr] = start;
+
+              if (addr == 0x29) {
+                ESP_LOGI("dd_decode", "READ req addr=0x%02X func=0x%02X start=%u / 0x%04X count=%u", addr, func, start, start, count);
+              }
+
+              continue;
+            }
+
+            if ((func == 0x03 || func == 0x04) && len >= 7) {
+              uint8_t byte_count = frame[2];
+              uint16_t start = (func == 0x03) ? last_start_03[addr] : last_start_04[addr];
+              int values = byte_count / 2;
+
+              // v93: online = a PHYSICAL device REPLIED (not our query).
+              if (addr == 0x33) id(dd_last_33_read_ms) = millis();
+              else if (addr == 0x29) {
+                id(dd_last_29_read_ms) = millis();
+                lww::panel_reply();  // starts the panel warm-up window after a reconnect/boot (lww_guard.h)
+              }
+              else if (addr == 0x2A) id(dd_last_2a_read_ms) = millis();
+              else if (addr == 0x2B) id(dd_last_2b_read_ms) = millis();
+
+              if (addr == 0x29) {
+                ESP_LOGI("dd_decode", "READ resp addr=0x%02X func=0x%02X start=%u values=%d", addr, func, start, values);
+              }
+
+              std::string values_json = "[";
+              for (int i = 0; i < values; i++) {
+                if (i > 0) values_json += ",";
+                uint16_t uvalue = ((uint16_t) frame[3 + i * 2] << 8) | frame[4 + i * 2];
+                int value = (int16_t) uvalue;
+                values_json += std::to_string(value);
+              }
+              values_json += "]";
+
+              for (int i = 0; i < values; i++) {
+                uint16_t reg = start + i;
+                uint16_t uvalue = ((uint16_t) frame[3 + i * 2] << 8) | frame[4 + i * 2];
+                int value = (int16_t) uvalue;
+                handle_pdu(addr, func, reg, value, "READ");
+              }
+              continue;
+            }
+
+            if (func == 0x06 && len == 8) {
+              uint16_t reg = ((uint16_t) frame[2] << 8) | frame[3];
+              uint16_t uvalue = ((uint16_t) frame[4] << 8) | frame[5];
+              int value = (int16_t) uvalue;
+
+              if (addr == 0x29) {
+                ESP_LOGW("dd_decode", "WRITE single addr=0x%02X PDU=%u / 0x%04X value=%d / 0x%04X", addr, reg, reg, value, uvalue);
+              }
+              handle_pdu(addr, func, reg, value, "WRITE06");
+
+              if (addr == 0x29 && emulator_29_enabled()) {
+                send_emu29_write06_ack(frame, reg, value);
+              }
+              if (addr == 0x2A && emulator_2a_enabled()) send_emu_zone_write06_ack(0x2A, frame, reg, value);  // v97
+              if (addr == 0x2B && emulator_2b_enabled()) send_emu_zone_write06_ack(0x2B, frame, reg, value);  // v97
+
+              continue;
+            }
+
+            if (func == 0x10 && len == 8) {
+              uint16_t start = ((uint16_t) frame[2] << 8) | frame[3];
+              uint16_t count = ((uint16_t) frame[4] << 8) | frame[5];
+              if (addr == 0x29) {
+                ESP_LOGI("dd_decode", "WRITE multi ACK addr=0x%02X start=%u / 0x%04X count=%u", addr, start, start, count);
+              }
+
+              continue;
+            }
+
+            if (func == 0x10 && len >= 11) {
+              uint16_t start = ((uint16_t) frame[2] << 8) | frame[3];
+              uint16_t count = ((uint16_t) frame[4] << 8) | frame[5];
+              uint8_t byte_count = frame[6];
+              int values = byte_count / 2;
+
+              if (addr == 0x29) {
+                ESP_LOGW("dd_decode", "WRITE multi addr=0x%02X start=%u / 0x%04X count=%u bytes=%u", addr, start, start, count, byte_count);
+              }
+
+              std::string values_json = "[";
+              for (int i = 0; i < values; i++) {
+                if (i > 0) values_json += ",";
+                uint16_t uvalue = ((uint16_t) frame[7 + i * 2] << 8) | frame[8 + i * 2];
+                int value = (int16_t) uvalue;
+                values_json += std::to_string(value);
+              }
+              values_json += "]";
+
+              for (int i = 0; i < values; i++) {
+                uint16_t reg = start + i;
+                uint16_t uvalue = ((uint16_t) frame[7 + i * 2] << 8) | frame[8 + i * 2];
+                int value = (int16_t) uvalue;
+
+                if (addr == 0x29) {
+                  ESP_LOGW("dd_decode", "  PDU=%u / 0x%04X value=%d / 0x%04X", reg, reg, value, uvalue);
+                }
+                handle_pdu(addr, func, reg, value, "WRITE10");
+              }
+
+              if (addr == 0x29 && emulator_29_enabled()) {
+                send_emu29_write10_ack(start, count);
+              }
+              if (addr == 0x2A && emulator_2a_enabled()) send_emu_zone_write10_ack(0x2A, start, count);  // v97
+              if (addr == 0x2B && emulator_2b_enabled()) send_emu_zone_write10_ack(0x2B, start, count);  // v97
+
+              if (addr == 0x33 && emulator_33_enabled()) {
+                bool dominus_presence_probe = (start == 2001 && count == 2 && values >= 2 &&
+                                               (((uint16_t) frame[7] << 8) | frame[8]) == 12 &&
+                                               (((uint16_t) frame[9] << 8) | frame[10]) == 0);
+                if (dominus_presence_probe) {
+                  id(dd_emu_33_last_ms) = millis();
+                  ESP_LOGW("dd_emu_33", "v52 Dominus probe RX 0x33/2001..2002=[12,0] - AUTO ACK wysłany (fast)");
+                } else {
+                  ESP_LOGW("dd_emu_33", "v52 0x33 WRITE10 start=%u count=%u - AUTO ACK fast-turnaround %s", start, count, emu33_write10_ack_pre_sent ? "OK" : "late");
+                  if (!emu33_write10_ack_pre_sent) send_emu33_write10_ack(start, count);
+                }
+              }
+
+              continue;
+            }
+          }
+  # v112: removed the dead "interval: 5ms" block (active anchor-write) - it was DISABLED since v57
+  # (return at the top). Slave model: the emulator does NOT write actively, the boiler reads settings from replies to
+  # READ. Also removed send_frame/send_frame_noack (used only in this block). ~365 lines of dead code.
