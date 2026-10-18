@@ -1,0 +1,102 @@
+# Immergas Magis Pro / Combo D+/D- emulator - package "dd_core"
+# Base: project info, components from GitHub, HA time (boiler clock drift), RS485 UART (pins via substitutions).
+# Device settings (esp32, logger, Wi-Fi, API, debug sensors) live in the main YAML.
+# Part of jotuera/immergas-magis-pro-combo-dd-modbus (MIT). Loaded by the main YAML through `packages:`.
+# File and id names start with dd_ so this repo can be combined with the T-/T+ and F1/F2 repos on one device.
+
+substitutions:
+  dd_author: "JoTu"
+  dd_github_url: "https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus"
+  dd_project_version: "2.0.0"
+  # RS485 pins (M5Stack Atom + RS485 unit). Override in your main YAML if your wiring differs.
+  dd_uart_tx_pin: GPIO26
+  dd_uart_rx_pin: GPIO32
+  dd_uart_de_pin: GPIO23
+  # Step of the setpoint sliders/climates (C). 0.1 = fine control; 0.5 = like the Dominus app.
+  dd_setpoint_step: "0.1"
+
+esphome:
+  project:
+    name: "jotuera.immergas-magis-pro-combo-dd-modbus"
+    version: "${dd_project_version}"
+  on_boot:
+    # v2.0.0: one-time copy of the values saved by v1.x (old global ids) - after restore (priority 600 < 800).
+    - priority: 600
+      then:
+        - lambda: |-
+            if (!id(dd_migrated_v2)) {
+            id(dd_panel_a31_raw) = id(panel_a31_raw);
+            id(dd_ha_room_temp_raw) = id(ha_room_temp_raw);
+            id(dd_ha_room_humidity_raw) = id(ha_room_humidity_raw);
+            id(dd_ha_room_temp_2_raw) = id(ha_room_temp_2_raw);
+            id(dd_ha_room_temp_3_raw) = id(ha_room_temp_3_raw);
+            id(dd_ha_room_humidity_2_raw) = id(ha_room_humidity_2_raw);
+            id(dd_ha_room_humidity_3_raw) = id(ha_room_humidity_3_raw);
+            id(dd_cwu_setpoint_raw) = id(cwu_setpoint_raw);
+            id(dd_zone1_setpoint_raw) = id(zone1_setpoint_raw);
+            id(dd_zone1_offset_raw) = id(zone1_offset_raw);
+            id(dd_zone2_setpoint_raw) = id(zone2_setpoint_raw);
+            id(dd_zone3_setpoint_raw) = id(zone3_setpoint_raw);
+            id(dd_zone2_offset_raw) = id(zone2_offset_raw);
+            id(dd_zone3_offset_raw) = id(zone3_offset_raw);
+            id(dd_operating_mode_raw) = id(operating_mode_raw);
+            id(dd_operating_mode_target_raw) = id(operating_mode_target_raw);
+            id(dd_dominus_comfort_heat_raw) = id(dominus_comfort_heat_raw);
+            id(dd_dominus_eco_heat_raw) = id(dominus_eco_heat_raw);
+            id(dd_dominus_comfort_cool_raw) = id(dominus_comfort_cool_raw);
+            id(dd_dominus_eco_cool_raw) = id(dominus_eco_cool_raw);
+            id(dd_dominus_humidity_raw) = id(dominus_humidity_raw);
+            id(dd_dominus_set_flow_raw) = id(dominus_set_flow_raw);
+            id(dd_dominus_comfort_heat_z2_raw) = id(dominus_comfort_heat_z2_raw);
+            id(dd_dominus_eco_heat_z2_raw) = id(dominus_eco_heat_z2_raw);
+            id(dd_dominus_comfort_cool_z2_raw) = id(dominus_comfort_cool_z2_raw);
+            id(dd_dominus_eco_cool_z2_raw) = id(dominus_eco_cool_z2_raw);
+            id(dd_dominus_humidity_z2_raw) = id(dominus_humidity_z2_raw);
+            id(dd_dominus_set_flow_z2_raw) = id(dominus_set_flow_z2_raw);
+            id(dd_dominus_comfort_heat_z3_raw) = id(dominus_comfort_heat_z3_raw);
+            id(dd_dominus_eco_heat_z3_raw) = id(dominus_eco_heat_z3_raw);
+            id(dd_dominus_comfort_cool_z3_raw) = id(dominus_comfort_cool_z3_raw);
+            id(dd_dominus_eco_cool_z3_raw) = id(dominus_eco_cool_z3_raw);
+            id(dd_dominus_humidity_z3_raw) = id(dominus_humidity_z3_raw);
+            id(dd_dominus_set_flow_z3_raw) = id(dominus_set_flow_z3_raw);
+              id(dd_migrated_v2) = true;
+              ESP_LOGW("dd_migrate", "v2.0.0: restored values of 34 globals copied from the v1.x ids");
+            }
+    - priority: 800
+      then:
+        - lambda: |-
+            // RS485 DE (GPIO23) is driven by the UART hardware (uart: flow_control_pin), not from here.
+            ESP_LOGW("dd_rs485", "RS485 hardware DE on GPIO23; Dominus 0x33 + panels + thermostats + chrono + faults + status ready, fw ${dd_project_version}");
+
+# Components of this project, downloaded from GitHub (nothing to copy next to this YAML):
+#   dd_bus_climate - climate entities backed by the bus state
+#   immergas_dd - shared helpers for the lambdas (HA/bus arbitration, fault texts)
+# @v2.0.0 = this release; @main = latest development version.
+
+external_components:
+  - source: github://jotuera/immergas-magis-pro-combo-dd-modbus@v2.0.0
+    components: [dd_bus_climate, immergas_dd]
+    refresh: 1d
+
+immergas_dd:
+
+# HA time, used only for the drift of the boiler clock (PDU 2300).
+
+time:
+  - platform: homeassistant
+    id: dd_ha_time
+
+uart:
+  id: dd_uart
+  tx_pin: ${dd_uart_tx_pin}
+  rx_pin: ${dd_uart_rx_pin}
+  # RS485 half-duplex in hardware (ESP-IDF UART_MODE_RS485_HALF_DUPLEX): the UART raises DE (RTS on GPIO23,
+  # HIGH = TX) right before the start bit and drops it after the last stop bit. write_array() returns at once:
+  # no flush()/busy-wait in the main loop. Previously DE was toggled in software with a 12/15 ms hold after
+  # every reply (~25-40 ms of blocked loop per frame, a few hundred frames per minute).
+  flow_control_pin: ${dd_uart_de_pin}
+  baud_rate: 9600
+  data_bits: 8
+  parity: EVEN
+  stop_bits: 1
+  rx_buffer_size: 1024

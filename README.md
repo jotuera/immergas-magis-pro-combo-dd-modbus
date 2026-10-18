@@ -6,9 +6,18 @@ The boiler is the Modbus **master**; this device is a **slave** that answers as 
 
 > ⚠️ **Tested only on the Magis Combo V2 (`MPROCOMBOV2`).** The Dominus app supports many Immergas engines (Zeus, Star, VictrixMaior, …) with different register maps — this project targets **Magis Combo only**. Other models may partially work but are untested. Contributions welcome.
 
+## What's new in v2.0.0
+
+**One naming scheme for the whole Immergas family.** File, id and substitution names now start with `dd_`, like `tt_` in [tt-bms](https://github.com/jotuera/immergas-magis-pro-combo-tt-bms), so the D+/D-, T-/T+ and F1/F2 configs can later run together on one device without clashes.
+
+- Packages: `packages/dd_core.yaml` … `dd_diagnostics.yaml`; languages: `packages/lang/dd_en.yaml`, `dd_pl.yaml`, `dd_it.yaml`; component `dd_bus_climate` (was `bus_climate`).
+- Substitutions: `dd_temp_src_*` / `dd_hum_src_*`, `dd_uart_*_pin`, `dd_setpoint_step`, names `n_dd_<id>`, texts `t_dd_*`.
+- Device settings (esp32, logger, debug, uptime / Wi-Fi / loop-time / heap / reset-reason sensors) moved to the main YAML.
+- ⚠️ **Upgrading from 1.x:** take the new main YAML and copy your values into it (rename `temp_src_*` → `dd_temp_src_*` etc.). **Entity names are unchanged**, so Home Assistant keeps the same entities and history. Values the device remembers (setpoints, offsets, mode, …) are copied once from the old ids on the first boot of 2.0.0.
+
 ## What's new in v1.6.0
 
-- **Languages.** Pick one file in the `packages:` list: `packages/lang/en.yaml` (default), `pl.yaml` (Polish) or `it.yaml` (Italian texts and fault descriptions; entity names still English - help welcome, see [TRANSLATING.md](TRANSLATING.md)). ⚠️ Switching language renames the entities, so Home Assistant creates new ones.
+- **Languages.** Pick one file in the `packages:` list: `packages/lang/en.yaml` (default), `pl.yaml` (Polish) or `it.yaml` (named `dd_*.yaml` since 2.0.0) (Italian texts and fault descriptions; entity names still English - help welcome, see [TRANSLATING.md](TRANSLATING.md)). ⚠️ Switching language renames the entities, so Home Assistant creates new ones.
 - Fault descriptions in English, Italian **and Polish**.
 - New: **A11 Heat-pump module present**, zone phase **Air purge** (U50), 7 not-yet-decoded registers as disabled diagnostic sensors, `setpoint_step` substitution.
 
@@ -142,14 +151,14 @@ Addresses: `0x33` Dominus · `0x29` Zone 1 panel · `0x2A` Zone 2 · `0x2B` Zone
 
 Edit the `substitutions:` block at the top of the YAML — these point to **your** Home Assistant sensors:
 
-- `temp_src_*` / `hum_src_*` — Zone 1 temperature/humidity sources (slots 2–5; slot 1 "Panel" = live bus value).
-- `temp_src_z2_*` / `hum_src_z2_*`, `temp_src_z3_*` / `hum_src_z3_*` — Zone 2 / 3 sources.
-- `uart_tx_pin`, `uart_rx_pin`, `uart_de_pin` — RS485 pins (defaults GPIO26 / GPIO32 / GPIO23 for the M5Stack Atom); add them only if your wiring differs.
+- `dd_temp_src_*` / `dd_hum_src_*` — Zone 1 temperature/humidity sources (slots 2–5; slot 1 "Panel" = live bus value).
+- `dd_temp_src_z2_*` / `dd_hum_src_z2_*`, `dd_temp_src_z3_*` / `dd_hum_src_z3_*` — Zone 2 / 3 sources.
+- `dd_uart_tx_pin`, `dd_uart_rx_pin`, `dd_uart_de_pin` — RS485 pins (defaults GPIO26 / GPIO32 / GPIO23 for the M5Stack Atom); add them only if your wiring differs.
 - Any other value of the packages can be overridden the same way (e.g. a single entity name in a later release).
 
 ## Setup
 
-1. Copy `immergas-magis-pro-combo-dd-modbus.yaml` into your ESPHome config folder. Everything else (the `packages/*.yaml` files and the `bus_climate` / `immergas_dd` components) is downloaded from GitHub. To upgrade, change `ref:` in the `packages:` block (or use `main` for the development version). Keep the list of package files complete: the packages depend on each other.
+1. Copy `immergas-magis-pro-combo-dd-modbus.yaml` into your ESPHome config folder. Everything else (the `packages/dd_*.yaml` files and the `dd_bus_climate` / `immergas_dd` components) is downloaded from GitHub. To upgrade, change `ref:` in the `packages:` block (or use `main` for the development version). Keep the list of package files complete: the packages depend on each other.
 1. `cp secrets.yaml.example secrets.yaml` and fill in WiFi + web UI credentials.
 2. Point the `substitutions:` sources to your HA sensors (see above).
 3. Flash `immergas-magis-pro-combo-dd-modbus.yaml` with ESPHome, wire the RS485 (with the **120 Ω** resistor), adopt in Home Assistant.

@@ -1,13 +1,14 @@
-# Immergas Magis Pro / Combo D+/D- emulator - package "diagnostics"
+# Immergas Magis Pro / Combo D+/D- emulator - package "dd_diagnostics"
 # Diagnostics: bus sniffer, device health (uptime, Wi-Fi, loop time, heap, reset reason), RS485 CRC errors,
 # Dominus TX frames, clock drift, link status, project metadata.
 # Part of jotuera/immergas-magis-pro-combo-dd-modbus (MIT). Loaded by the main YAML through `packages:`.
+# File and id names start with dd_ so this repo can be combined with the T-/T+ and F1/F2 repos on one device.
 
 switch:
   # v1.2.0: bus sniffer - logs (tag "sniff") every NEW/CHANGED register value on D+/D-. Diagnostic, OFF by default.
   - platform: template
-    name: "${n_sniff_switch}"
-    id: sniff_switch
+    name: "${n_dd_sniff_switch}"
+    id: dd_sniff_switch
     icon: mdi:radar
     entity_category: diagnostic
     restore_mode: RESTORE_DEFAULT_OFF
@@ -22,8 +23,8 @@ switch:
 
 button:
   - platform: template
-    name: "${n_sniff_reset_button}"
-    id: sniff_reset_button
+    name: "${n_dd_sniff_reset_button}"
+    id: dd_sniff_reset_button
     icon: mdi:restart
     entity_category: diagnostic
     on_press:
@@ -34,8 +35,8 @@ sensor:
   # Registers not decoded yet (raw values, published from handle_pdu). Disabled by default - enable them in HA
   # if you want to help decoding (see REGISTER_MAP.md, "still unknown").
   - platform: template
-    name: "${n_sniff_29_r_0}"
-    id: sniff_29_r_0
+    name: "${n_dd_sniff_29_r_0}"
+    id: dd_sniff_29_r_0
     icon: mdi:help-rhombus-outline
     entity_category: diagnostic
     disabled_by_default: true
@@ -43,8 +44,8 @@ sensor:
     accuracy_decimals: 0
     update_interval: never
   - platform: template
-    name: "${n_sniff_29_r_1}"
-    id: sniff_29_r_1
+    name: "${n_dd_sniff_29_r_1}"
+    id: dd_sniff_29_r_1
     icon: mdi:help-rhombus-outline
     entity_category: diagnostic
     disabled_by_default: true
@@ -52,8 +53,8 @@ sensor:
     accuracy_decimals: 0
     update_interval: never
   - platform: template
-    name: "${n_sniff_29_r_2103}"
-    id: sniff_29_r_2103
+    name: "${n_dd_sniff_29_r_2103}"
+    id: dd_sniff_29_r_2103
     icon: mdi:help-rhombus-outline
     entity_category: diagnostic
     disabled_by_default: true
@@ -61,8 +62,8 @@ sensor:
     accuracy_decimals: 0
     update_interval: never
   - platform: template
-    name: "${n_sniff_33_w_2012}"
-    id: sniff_33_w_2012
+    name: "${n_dd_sniff_33_w_2012}"
+    id: dd_sniff_33_w_2012
     icon: mdi:help-rhombus-outline
     entity_category: diagnostic
     disabled_by_default: true
@@ -70,8 +71,8 @@ sensor:
     accuracy_decimals: 0
     update_interval: never
   - platform: template
-    name: "${n_sniff_1e_i_15}"
-    id: sniff_1e_i_15
+    name: "${n_dd_sniff_1e_i_15}"
+    id: dd_sniff_1e_i_15
     icon: mdi:help-rhombus-outline
     entity_category: diagnostic
     disabled_by_default: true
@@ -79,8 +80,8 @@ sensor:
     accuracy_decimals: 0
     update_interval: never
   - platform: template
-    name: "${n_sniff_1e_i_20}"
-    id: sniff_1e_i_20
+    name: "${n_dd_sniff_1e_i_20}"
+    id: dd_sniff_1e_i_20
     icon: mdi:help-rhombus-outline
     entity_category: diagnostic
     disabled_by_default: true
@@ -88,8 +89,8 @@ sensor:
     accuracy_decimals: 0
     update_interval: never
   - platform: template
-    name: "${n_sniff_1e_w_5}"
-    id: sniff_1e_w_5
+    name: "${n_dd_sniff_1e_w_5}"
+    id: dd_sniff_1e_w_5
     icon: mdi:help-rhombus-outline
     entity_category: diagnostic
     disabled_by_default: true
@@ -99,8 +100,8 @@ sensor:
 
   # v1.2.0 bus sniffer counters
   - platform: template
-    name: "${n_sniff_regs_sensor}"
-    id: sniff_regs_sensor
+    name: "${n_dd_sniff_regs_sensor}"
+    id: dd_sniff_regs_sensor
     icon: mdi:counter
     entity_category: diagnostic
     state_class: measurement  # integer: HA shows "1", not "1.0"
@@ -109,8 +110,8 @@ sensor:
     lambda: |-
       return id(dd_sniff_regs);
   - platform: template
-    name: "${n_sniff_changes_sensor}"
-    id: sniff_changes_sensor
+    name: "${n_dd_sniff_changes_sensor}"
+    id: dd_sniff_changes_sensor
     icon: mdi:counter
     entity_category: diagnostic
     state_class: measurement  # integer: HA shows "1", not "1.0"
@@ -122,21 +123,6 @@ sensor:
   # v1.2.0 boiler -> panel block (0x29) = zone-panel "Information" menu 1:1 (all x0.1 C, published from handle_pdu)
   # Device and bus health. Uptime drop = reboot; Loop time spikes = main loop blocked; CRC/TX counters: watch them
   # after any change to the RS485 path.
-  - platform: uptime
-    name: "${n_uptime}"
-    entity_category: diagnostic
-    update_interval: 10s
-  - platform: wifi_signal
-    name: "${n_wifi_signal}"
-    entity_category: diagnostic
-    update_interval: 30s
-  - platform: debug
-    loop_time:
-      name: "${n_loop_time}"
-      entity_category: diagnostic
-    free:
-      name: "${n_free_heap}"
-      entity_category: diagnostic
   - platform: template
     name: "${n_dd_crc_bad_sensor}"
     id: dd_crc_bad_sensor
@@ -161,16 +147,16 @@ sensor:
   # in minutes (+ ahead / - behind). The zone schedules run on the boiler clock. Resolution 1 min.
   # Magis Combo V2 fw 5.03 + physical panel: 0 min on 11/10/2026 (summer time), i.e. that clock follows DST.
   - platform: template
-    name: "${n_controller_clock_drift}"
-    id: controller_clock_drift
+    name: "${n_dd_controller_clock_drift}"
+    id: dd_controller_clock_drift
     icon: mdi:clock-alert-outline
     entity_category: diagnostic
     unit_of_measurement: "min"
     accuracy_decimals: 0
     update_interval: 60s
     lambda: |-
-      uint16_t r = (uint16_t) id(pdu_29_2300_raw);
-      auto now = id(ha_time).now();
+      uint16_t r = (uint16_t) id(dd_pdu_29_2300_raw);
+      auto now = id(dd_ha_time).now();
       int wd = (r >> 13) & 0x07, hh = (r >> 8) & 0x1F, mm = r & 0xFF;
       if (r == 0 || !now.is_valid() || wd < 1 || hh > 23 || mm > 59) return NAN;
       int boiler = (wd - 1) * 1440 + hh * 60 + mm;                                    // minutes since Monday 00:00
@@ -181,48 +167,44 @@ sensor:
       return (float) d;
 
 text_sensor:
-  - platform: debug
-    reset_reason:
-      name: "${n_reset_reason}"
-      entity_category: diagnostic
 
   # v1.2.0
   - platform: template
-    name: "${n_sniff_last_change}"
-    id: sniff_last_change
+    name: "${n_dd_sniff_last_change}"
+    id: dd_sniff_last_change
     icon: mdi:radar
     entity_category: diagnostic
     update_interval: never
   # v110: metadane projektu (autor + repozytorium GitHub) - widoczne jako encje diagnostyczne urzadzenia.
   - platform: template
-    name: "${n_meta_author}"
-    id: meta_author
+    name: "${n_dd_meta_author}"
+    id: dd_meta_author
     icon: mdi:account
     entity_category: diagnostic
     update_interval: 3600s
     lambda: |-
-      return std::string("${author}");
+      return std::string("${dd_author}");
   - platform: template
-    name: "${n_meta_github}"
-    id: meta_github
+    name: "${n_dd_meta_github}"
+    id: dd_meta_github
     icon: mdi:github
     entity_category: diagnostic
     update_interval: 3600s
     lambda: |-
-      return std::string("${github_url}");
+      return std::string("${dd_github_url}");
   - platform: template
-    name: "${n_meta_version}"
-    id: meta_version
+    name: "${n_dd_meta_version}"
+    id: dd_meta_version
     icon: mdi:tag-outline
     entity_category: diagnostic
     update_interval: 3600s
     lambda: |-
-      return std::string("${project_version}");
+      return std::string("${dd_project_version}");
 
 binary_sensor:
   - platform: template
-    name: "${n_bs_dominus_online}"
-    id: bs_dominus_online
+    name: "${n_dd_bs_dominus_online}"
+    id: dd_bs_dominus_online
     device_class: connectivity
     entity_category: diagnostic
     lambda: |-
@@ -230,8 +212,8 @@ binary_sensor:
       return (millis() - id(dd_last_33_read_ms)) < 30000;
 
   - platform: template
-    name: "${n_bs_panel_online}"
-    id: bs_panel_online
+    name: "${n_dd_bs_panel_online}"
+    id: dd_bs_panel_online
     device_class: connectivity
     entity_category: diagnostic
     lambda: |-
@@ -239,8 +221,8 @@ binary_sensor:
       return (millis() - id(dd_last_29_read_ms)) < 30000;
 
   - platform: template
-    name: "${n_bs_modbus_online}"
-    id: bs_modbus_online
+    name: "${n_dd_bs_modbus_online}"
+    id: dd_bs_modbus_online
     device_class: connectivity
     entity_category: diagnostic
     lambda: |-
@@ -248,7 +230,7 @@ binary_sensor:
       if (id(dd_last_1e_read_ms) == 0) return false;
       return (millis() - id(dd_last_1e_read_ms)) < 30000;
 
-# Climate entities backed by the bus (components/bus_climate). The boiler does the real regulation: state is
+# Climate entities backed by the bus (components/dd_bus_climate). The boiler does the real regulation: state is
 # what the boiler reports (setpoint 2015, mode 2000, phase/request 2010), there is no local control loop.
 # Commands from HA go through the existing number/select entities, i.e. the same write path as the sliders.
 # Replaces the v65 "thermostat" climates and the v118 1 s delta-sync loop: a thermostat platform keeps its own

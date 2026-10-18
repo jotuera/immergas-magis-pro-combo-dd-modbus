@@ -1,0 +1,298 @@
+# Immergas Magis Pro / Combo D+/D- emulator - package "dd_zone1"
+# Zone 1: setpoint, offset, phase, climate, heating request, room temperature/humidity sources from HA.
+# Part of jotuera/immergas-magis-pro-combo-dd-modbus (MIT). Loaded by the main YAML through `packages:`.
+# File and id names start with dd_ so this repo can be combined with the T-/T+ and F1/F2 repos on one device.
+
+number:
+  # ------------------------------------------------------------
+  # Zone 1 - active setpoint and U03/Offset
+  # ------------------------------------------------------------
+  - platform: template
+    name: "${n_dd_zone1_setpoint_number}"
+    id: dd_zone1_setpoint_number
+    icon: mdi:home-thermometer
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: ${dd_setpoint_step}
+    mode: slider
+    optimistic: false
+    lambda: |-
+      return id(dd_zone1_setpoint_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          int raw = (int) round(x * 10.0f);
+          lww::local_write(lww::ZONE1_SETPOINT, id(dd_zone1_setpoint_raw), raw);
+          id(dd_zone1_setpoint_raw) = raw;
+          ESP_LOGW("dd_control", "v18 anchor-zone-write: zlecono zapis Strefy 1: zadana %.1f°C raw=%d. Czekam na naturalny ACK jako kotwicę.", x, raw);
+          id(dd_zone1_setpoint_number).publish_state(x);  // v61: natychmiastowy update suwaka w HA
+
+  - platform: template
+    name: "${n_dd_zone1_offset_number}"
+    id: dd_zone1_offset_number
+    icon: mdi:sine-wave
+    unit_of_measurement: "°C"
+    min_value: -10
+    max_value: 10
+    step: 1
+    mode: slider
+    optimistic: false
+    lambda: |-
+      return id(dd_zone1_offset_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          int raw = (int) round(x * 10.0f);
+          lww::local_write(lww::ZONE1_OFFSET, id(dd_zone1_offset_raw), raw);
+          id(dd_zone1_offset_raw) = raw;
+          ESP_LOGW("dd_control", "v18 anchor-zone-write: zlecono zapis U03 / Offset Flow: %.1f raw=%d. Czekam na naturalny ACK jako kotwicę.", x, raw);
+          id(dd_zone1_offset_number).publish_state(x);  // v61: natychmiastowy update suwaka w HA
+
+select:
+  # v100: 5 sources for Zone 1 (Panel/Basement/Ground floor/Upper floor/Whole house), default Upper floor (idx 4).
+  - platform: template
+    name: "${n_dd_temp_source_select}"
+    id: dd_temp_source_select
+    icon: mdi:thermometer
+    optimistic: true
+    entity_category: config
+    options:
+      - "${t_dd_src_panel}"
+      - "${t_dd_src_basement}"
+      - "${t_dd_src_ground}"
+      - "${t_dd_src_upper}"
+      - "${t_dd_src_house}"
+    initial_option: "${t_dd_src_upper}"
+    set_action:
+      - lambda: |-
+          int idx = 4;
+          if (x == "${t_dd_src_panel}") idx = 1;
+          else if (x == "${t_dd_src_basement}") idx = 2;
+          else if (x == "${t_dd_src_ground}") idx = 3;
+          else if (x == "${t_dd_src_house}") idx = 5;
+          id(dd_temp_src_idx) = idx;
+          switch (idx) {
+            case 1: id(dd_ha_room_temp_raw) = id(dd_ha_temp_raw_1); break;
+            case 2: id(dd_ha_room_temp_raw) = id(dd_ha_temp_raw_2); break;
+            case 3: id(dd_ha_room_temp_raw) = id(dd_ha_temp_raw_3); break;
+            case 4: id(dd_ha_room_temp_raw) = id(dd_ha_temp_raw_4); break;
+            case 5: id(dd_ha_room_temp_raw) = id(dd_ha_temp_raw_5); break;
+          }
+          ESP_LOGW("dd_control", "v100 Zrodlo TEMP Strefy 1 -> %d (%s)", idx, x.c_str());
+  - platform: template
+    name: "${n_dd_hum_source_select}"
+    id: dd_hum_source_select
+    icon: mdi:water-percent
+    optimistic: true
+    entity_category: config
+    options:
+      - "${t_dd_src_panel}"
+      - "${t_dd_src_basement}"
+      - "${t_dd_src_ground}"
+      - "${t_dd_src_upper}"
+      - "${t_dd_src_house}"
+    initial_option: "${t_dd_src_upper}"
+    set_action:
+      - lambda: |-
+          int idx = 4;
+          if (x == "${t_dd_src_panel}") idx = 1;
+          else if (x == "${t_dd_src_basement}") idx = 2;
+          else if (x == "${t_dd_src_ground}") idx = 3;
+          else if (x == "${t_dd_src_house}") idx = 5;
+          id(dd_hum_src_idx) = idx;
+          switch (idx) {
+            case 1: id(dd_ha_room_humidity_raw) = id(dd_ha_hum_raw_1); break;
+            case 2: id(dd_ha_room_humidity_raw) = id(dd_ha_hum_raw_2); break;
+            case 3: id(dd_ha_room_humidity_raw) = id(dd_ha_hum_raw_3); break;
+            case 4: id(dd_ha_room_humidity_raw) = id(dd_ha_hum_raw_4); break;
+            case 5: id(dd_ha_room_humidity_raw) = id(dd_ha_hum_raw_5); break;
+          }
+          ESP_LOGW("dd_control", "v100 Zrodlo WILG Strefy 1 -> %d (%s)", idx, x.c_str());
+
+sensor:
+  # ------------------------------------------------------------
+  # v62: inputs from HA - Zone 1 room temp and humidity (for the emulated panel 0x29).
+  # ------------------------------------------------------------
+  # v63: 3 temp sources. Each updates its buffer; if currently selected -> also the output.
+  # v101: source 1 "${t_dd_src_panel}" (Zone 1 temp) = real PDU 2005 of the physical panel 0x29
+  # (handle_pdu -> dd_ha_temp_raw_1), nie z HA.
+  - platform: homeassistant
+    id: dd_ha_temp_in_2
+    entity_id: ${dd_temp_src_2}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_temp_raw_2) = (int) roundf(x * 10.0f);
+            if (id(dd_temp_src_idx) == 2) id(dd_ha_room_temp_raw) = id(dd_ha_temp_raw_2); }
+  - platform: homeassistant
+    id: dd_ha_temp_in_3
+    entity_id: ${dd_temp_src_3}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_temp_raw_3) = (int) roundf(x * 10.0f);
+            if (id(dd_temp_src_idx) == 3) id(dd_ha_room_temp_raw) = id(dd_ha_temp_raw_3); }
+  - platform: homeassistant
+    id: dd_ha_temp_in_4
+    entity_id: ${dd_temp_src_4}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_temp_raw_4) = (int) roundf(x * 10.0f);
+            if (id(dd_temp_src_idx) == 4) id(dd_ha_room_temp_raw) = id(dd_ha_temp_raw_4); }
+  - platform: homeassistant
+    id: dd_ha_temp_in_5
+    entity_id: ${dd_temp_src_5}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_temp_raw_5) = (int) roundf(x * 10.0f);
+            if (id(dd_temp_src_idx) == 5) id(dd_ha_room_temp_raw) = id(dd_ha_temp_raw_5); }
+
+  # v64/v100: 5 humidity sources (same as above).
+  # v101: source 1 "${t_dd_src_panel}" (Zone 1 humidity) = real PDU 2006 of the physical panel 0x29
+  # (handle_pdu -> dd_ha_hum_raw_1), nie z HA.
+  - platform: homeassistant
+    id: dd_ha_hum_in_2
+    entity_id: ${dd_hum_src_2}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_hum_raw_2) = (int) roundf(x);
+            if (id(dd_hum_src_idx) == 2) id(dd_ha_room_humidity_raw) = id(dd_ha_hum_raw_2); }
+  - platform: homeassistant
+    id: dd_ha_hum_in_3
+    entity_id: ${dd_hum_src_3}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_hum_raw_3) = (int) roundf(x);
+            if (id(dd_hum_src_idx) == 3) id(dd_ha_room_humidity_raw) = id(dd_ha_hum_raw_3); }
+  - platform: homeassistant
+    id: dd_ha_hum_in_4
+    entity_id: ${dd_hum_src_4}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_hum_raw_4) = (int) roundf(x);
+            if (id(dd_hum_src_idx) == 4) id(dd_ha_room_humidity_raw) = id(dd_ha_hum_raw_4); }
+  - platform: homeassistant
+    id: dd_ha_hum_in_5
+    entity_id: ${dd_hum_src_5}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_hum_raw_5) = (int) roundf(x);
+            if (id(dd_hum_src_idx) == 5) id(dd_ha_room_humidity_raw) = id(dd_ha_hum_raw_5); }
+
+  - platform: template
+    name: "${n_dd_zone1_temp_sensor}"
+    id: dd_zone1_temp_sensor
+    icon: mdi:home-thermometer-outline
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    device_class: temperature
+    state_class: measurement
+    lambda: |-
+      // v62: shows the room temp fed to the boiler (from HA, via the emulated panel 0x29).
+      return id(dd_ha_room_temp_raw) / 10.0f;
+    update_interval: 5s
+
+  # ------------------------------------------------------------
+  # Values from the Zone 1 panel / 0x29 diagnostics
+  # ------------------------------------------------------------
+  - platform: template
+    name: "${n_dd_sensor_zone1_humidity}"
+    id: dd_sensor_zone1_humidity
+    icon: mdi:water-percent
+    unit_of_measurement: "%"
+    state_class: measurement
+    accuracy_decimals: 0
+    lambda: |-
+      // v62: shows the humidity fed to the boiler (from HA, via the emulated panel 0x29).
+      return id(dd_ha_room_humidity_raw);
+    update_interval: 5s
+
+text_sensor:
+  # v73: Zone 1 operating phase (Comfort/Eco/Manual) from PDU 2010 LB. bit6=Comfort, bit7=Eco, bit2=Manual
+  # (Dominus app logic: flag8 bits 2/6/7). Read-only - the boiler writes 2010 to us (captured in handle_pdu).
+  - platform: template
+    name: "${n_dd_zone1_phase_text}"
+    id: dd_zone1_phase_text
+    icon: mdi:home-thermometer
+    update_interval: 10s
+    lambda: |-
+      int lb = id(dd_zone1_status_raw) & 0xFF;
+      if (lb & 0x40) return std::string("${t_dd_phase_comfort}");
+      if (lb & 0x80) return std::string("${t_dd_phase_eco}");
+      if (lb & 0x04) return std::string("${t_dd_phase_manual}");
+      if (lb == 0x01) return std::string("${t_dd_phase_purge}");  // U50 (2010 = 1)
+      return std::string("—");
+
+binary_sensor:
+  # Zone 1 heating/cooling request = PDU 2010 bit3 (verified: 2010 = 12 with heating active).
+  - platform: template
+    name: "${n_dd_bs_zone1_heat_request}"
+    id: dd_bs_zone1_heat_request
+    icon: mdi:fire  # no device_class heat: HA would show "hot"/"normal" instead of on/off
+    lambda: |-
+      return (id(dd_zone1_status_raw) & 0x08) != 0;
+
+climate:
+  - platform: dd_bus_climate
+    name: "${n_dd_co_thermostat}"
+    id: dd_co_thermostat
+    icon: mdi:radiator
+    update_interval: 2s
+    supported_modes: [HEAT, COOL]
+    visual:
+      min_temperature: 5
+      max_temperature: 35
+      temperature_step:
+        target_temperature: ${dd_setpoint_step}
+        current_temperature: 0.1
+    current_temperature_lambda: |-
+      if (id(dd_ha_room_temp_raw) <= 0) return NAN;
+      return id(dd_ha_room_temp_raw) / 10.0f;
+    current_humidity_lambda: |-
+      if (id(dd_ha_room_humidity_raw) <= 0) return NAN;
+      return (float) id(dd_ha_room_humidity_raw);
+    target_temperature_lambda: |-
+      return id(dd_zone1_setpoint_raw) / 10.0f;
+    mode_lambda: |-
+      switch (id(dd_operating_mode_reported)) {
+        case 3: return climate::CLIMATE_MODE_HEAT;
+        case 2: return climate::CLIMATE_MODE_COOL;
+        default: return climate::CLIMATE_MODE_OFF;
+      }
+    action_lambda: |-
+      int m = id(dd_operating_mode_reported);
+      if (m != 2 && m != 3) return climate::CLIMATE_ACTION_OFF;
+      if ((id(dd_zone1_status_raw) & 0x08) == 0) return climate::CLIMATE_ACTION_IDLE;  // 2010 bit3 = request
+      return (m == 3) ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_COOLING;
+    set_target_temperature_action:
+      - lambda: |-
+          id(dd_zone1_setpoint_number).make_call().set_value(x).perform();
+    supported_presets: [COMFORT, ECO, NONE]
+    preset_lambda: |-
+      int st = id(dd_zone1_status_raw) & 0xFF;
+      if (st & 0x40) return std::string("COMFORT");
+      if (st & 0x80) return std::string("ECO");
+      if (st & 0x04) return std::string("NONE");
+      return {};
+    set_preset_action:
+      - lambda: |-
+          // NONE (= Manual) is a state, not a command -> ignored.
+          bool cool = (id(dd_operating_mode_reported) == 2);
+          int raw;
+          if (x == "COMFORT") raw = cool ? id(dd_dominus_comfort_cool_raw) : id(dd_dominus_comfort_heat_raw);
+          else if (x == "ECO") raw = cool ? id(dd_dominus_eco_cool_raw) : id(dd_dominus_eco_heat_raw);
+          else return;
+          ESP_LOGI("climate_z1", "Preset %s (%s) -> setpoint %.1f", x.c_str(), cool ? "cooling" : "heating", raw / 10.0f);
+          id(dd_zone1_setpoint_number).make_call().set_value(raw / 10.0f).perform();
+    set_mode_action:
+      - lambda: |-
+          // OFF = Summer (DHW only): heating/cooling off, hot water kept. Standby stays on the mode select.
+          const char *opt = "${t_dd_mode_summer}";
+          if (x == climate::CLIMATE_MODE_HEAT) opt = "${t_dd_mode_winter}";
+          else if (x == climate::CLIMATE_MODE_COOL) opt = "${t_dd_mode_cooling}";
+          id(dd_operating_mode_select).make_call().set_option(opt).perform();

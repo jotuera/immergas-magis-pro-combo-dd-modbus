@@ -1,14 +1,15 @@
-# Immergas Magis Pro / Combo D+/D- emulator - package "dhw"
+# Immergas Magis Pro / Combo D+/D- emulator - package "dd_dhw"
 # Domestic hot water: setpoint, climate, temperatures, active setpoint written by the boiler.
 # Part of jotuera/immergas-magis-pro-combo-dd-modbus (MIT). Loaded by the main YAML through `packages:`.
+# File and id names start with dd_ so this repo can be combined with the T-/T+ and F1/F2 repos on one device.
 
 number:
   # ------------------------------------------------------------
   # v57 DHW setpoint - control (the emulator returns it on READ 2095, the boiler applies it)
   # ------------------------------------------------------------
   - platform: template
-    name: "${n_cwu_setpoint_number}"
-    id: cwu_setpoint_number
+    name: "${n_dd_cwu_setpoint_number}"
+    id: dd_cwu_setpoint_number
     icon: mdi:water-thermometer
     unit_of_measurement: "°C"
     min_value: 30
@@ -17,19 +18,19 @@ number:
     mode: slider
     optimistic: false
     lambda: |-
-      return id(cwu_setpoint_raw) / 10.0f;
+      return id(dd_cwu_setpoint_raw) / 10.0f;
     set_action:
       - lambda: |-
-          lww::local_write(lww::DHW_SETPOINT, id(cwu_setpoint_raw), (int) round(x * 10.0f));
-          id(cwu_setpoint_raw) = (int) round(x * 10.0f);
-          ESP_LOGW("dd_control", "v57 STEROWANIE CWU: zadana %.1f stopni raw=%d. Emulator zwraca to na READ 2095.", x, id(cwu_setpoint_raw));
-          id(cwu_setpoint_number).publish_state(x);  // v61: natychmiastowy update suwaka w HA
+          lww::local_write(lww::DHW_SETPOINT, id(dd_cwu_setpoint_raw), (int) round(x * 10.0f));
+          id(dd_cwu_setpoint_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v57 STEROWANIE CWU: zadana %.1f stopni raw=%d. Emulator zwraca to na READ 2095.", x, id(dd_cwu_setpoint_raw));
+          id(dd_cwu_setpoint_number).publish_state(x);  // v61: natychmiastowy update suwaka w HA
 
 sensor:
   # 3015 = DHW setpoint the boiler is actually using (e.g. 60 during anti-legionella)
   - platform: template
-    name: "${n_sniff_29_w_3015}"
-    id: sniff_29_w_3015
+    name: "${n_dd_sniff_29_w_3015}"
+    id: dd_sniff_29_w_3015
     icon: mdi:thermometer
     device_class: temperature
     state_class: measurement
@@ -40,22 +41,22 @@ sensor:
   # Main user values
   # ------------------------------------------------------------
   - platform: template
-    name: "${n_dhw_temp_sensor}"
-    id: dhw_temp_sensor
+    name: "${n_dd_dhw_temp_sensor}"
+    id: dd_dhw_temp_sensor
     icon: mdi:thermometer-water
     unit_of_measurement: "°C"
     accuracy_decimals: 1
     device_class: temperature
     state_class: measurement
     lambda: |-
-      if (id(dhw_temp_raw) == 0) return {};
-      return id(dhw_temp_raw) / 10.0f;
+      if (id(dd_dhw_temp_raw) == 0) return {};
+      return id(dd_dhw_temp_raw) / 10.0f;
     update_interval: 5s
 
 climate:
-  - platform: bus_climate
-    name: "${n_cwu_thermostat}"
-    id: cwu_thermostat
+  - platform: dd_bus_climate
+    name: "${n_dd_cwu_thermostat}"
+    id: dd_cwu_thermostat
     icon: mdi:water-boiler
     update_interval: 2s
     supported_modes: [HEAT]
@@ -66,17 +67,17 @@ climate:
         target_temperature: 0.5
         current_temperature: 0.1
     current_temperature_lambda: |-
-      if (id(dhw_temp_raw) <= 0) return NAN;
-      return id(dhw_temp_raw) / 10.0f;
+      if (id(dd_dhw_temp_raw) <= 0) return NAN;
+      return id(dd_dhw_temp_raw) / 10.0f;
     target_temperature_lambda: |-
-      return id(cwu_setpoint_raw) / 10.0f;
+      return id(dd_cwu_setpoint_raw) / 10.0f;
     mode_lambda: |-
       // DHW is active in every mode except Standby. Not switchable from here (no set_mode_action):
       // turning DHW off means Standby, which also stops heating -> use the mode select.
-      return (id(operating_mode_reported) == 0) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
+      return (id(dd_operating_mode_reported) == 0) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
     action_lambda: |-
-      if (id(operating_mode_reported) == 0) return climate::CLIMATE_ACTION_OFF;
-      return id(piec_zadanie_cwu_oczek).state ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;  // 2001 bit0
+      if (id(dd_operating_mode_reported) == 0) return climate::CLIMATE_ACTION_OFF;
+      return id(dd_piec_zadanie_cwu_oczek).state ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;  // 2001 bit0
     set_target_temperature_action:
       - lambda: |-
-          id(cwu_setpoint_number).make_call().set_value(x).perform();
+          id(dd_cwu_setpoint_number).make_call().set_value(x).perform();

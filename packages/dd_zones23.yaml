@@ -1,0 +1,840 @@
+# Immergas Magis Pro / Combo D+/D- emulator - package "dd_zones23"
+# Zones 2 and 3 (emulated panels 0x2A / 0x2B): setpoints, levels, climates, sources, status.
+# Part of jotuera/immergas-magis-pro-combo-dd-modbus (MIT). Loaded by the main YAML through `packages:`.
+# File and id names start with dd_ so this repo can be combined with the T-/T+ and F1/F2 repos on one device.
+
+switch:
+  - platform: template
+    name: "${n_dd_emulate_2a_switch}"
+    id: dd_emulate_2a_switch
+    icon: mdi:robot
+    entity_category: diagnostic
+    restore_mode: RESTORE_DEFAULT_OFF
+    lambda: |-
+      return id(dd_emulate_2a_diag);
+    turn_on_action:
+      - lambda: |-
+          // v107 SAFETY: a physical device answers on 0x2A (connected) -> do NOT enable emulation
+          // (two devices on the same address = bus collision).
+          if (id(dd_last_2a_read_ms) != 0 && (millis() - id(dd_last_2a_read_ms)) < 30000) {
+            ESP_LOGE("dd_mode", "BEZPIECZNIK: fizyczny panel Strefy 2 0x2A wykryty (polaczono) - NIE wlaczam emulacji.");
+            id(dd_emulate_2a_diag) = false;
+            id(dd_emulate_2a_switch).publish_state(false);
+            return;
+          }
+          id(dd_emulate_2a_diag) = true;
+          id(dd_emulate_33_diag) = false;  // v94: panel aktywny => Dominus zbedny
+          ESP_LOGW("dd_mode", "v85 EMULACJA panelu Strefy 2 addr 42/0x2A - flaga ON (backend serwowania 0x2A do zrobienia)");
+    turn_off_action:
+      - lambda: |-
+          id(dd_emulate_2a_diag) = false;
+          id(dd_last_2a_read_ms) = 0;  // v107: reset polaczenia
+          ESP_LOGW("dd_mode", "v85 EMULACJA Strefy 2 addr 42 wylaczona");
+
+  - platform: template
+    name: "${n_dd_emulate_2b_switch}"
+    id: dd_emulate_2b_switch
+    icon: mdi:robot
+    entity_category: diagnostic
+    restore_mode: RESTORE_DEFAULT_OFF
+    lambda: |-
+      return id(dd_emulate_2b_diag);
+    turn_on_action:
+      - lambda: |-
+          // v107 SAFETY: a physical device answers on 0x2B (connected) -> do NOT enable emulation
+          // (two devices on the same address = bus collision).
+          if (id(dd_last_2b_read_ms) != 0 && (millis() - id(dd_last_2b_read_ms)) < 30000) {
+            ESP_LOGE("dd_mode", "BEZPIECZNIK: fizyczny panel Strefy 3 0x2B wykryty (polaczono) - NIE wlaczam emulacji.");
+            id(dd_emulate_2b_diag) = false;
+            id(dd_emulate_2b_switch).publish_state(false);
+            return;
+          }
+          id(dd_emulate_2b_diag) = true;
+          id(dd_emulate_33_diag) = false;  // v94: panel aktywny => Dominus zbedny
+          ESP_LOGW("dd_mode", "v85 EMULACJA panelu Strefy 3 addr 43/0x2B - flaga ON (backend serwowania 0x2B do zrobienia)");
+    turn_off_action:
+      - lambda: |-
+          id(dd_emulate_2b_diag) = false;
+          id(dd_last_2b_read_ms) = 0;  // v107: reset polaczenia
+          ESP_LOGW("dd_mode", "v85 EMULACJA Strefy 3 addr 43 wylaczona");
+
+number:
+  # v96: ZONE 2/3 - CH setpoint + offset. Placeholders (the boiler reads zones 2/3 only in a multi-zone
+  # setup A13; the 0x2A/0x2B serving backend doesn't exist yet). Sliders set the global + sync the thermostat.
+  - platform: template
+    name: "${n_dd_zone2_setpoint_number}"
+    id: dd_zone2_setpoint_number
+    icon: mdi:home-thermometer
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(dd_zone2_setpoint_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dd_zone2_setpoint_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v96 Strefa 2 zadana %.1f°C raw=%d (placeholder - backend 0x2A do zrobienia)", x, id(dd_zone2_setpoint_raw));
+          id(dd_zone2_setpoint_number).publish_state(x);
+
+  - platform: template
+    name: "${n_dd_zone3_setpoint_number}"
+    id: dd_zone3_setpoint_number
+    icon: mdi:home-thermometer
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(dd_zone3_setpoint_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dd_zone3_setpoint_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v96 Strefa 3 zadana %.1f°C raw=%d (placeholder - backend 0x2B do zrobienia)", x, id(dd_zone3_setpoint_raw));
+          id(dd_zone3_setpoint_number).publish_state(x);
+
+  - platform: template
+    name: "${n_dd_zone2_offset_number}"
+    id: dd_zone2_offset_number
+    icon: mdi:sine-wave
+    unit_of_measurement: "°C"
+    min_value: -10
+    max_value: 10
+    step: 1
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(dd_zone2_offset_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dd_zone2_offset_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v96 Offset c.o. Strefa 2 %.1f raw=%d (placeholder - backend 0x2A do zrobienia)", x, id(dd_zone2_offset_raw));
+          id(dd_zone2_offset_number).publish_state(x);
+
+  - platform: template
+    name: "${n_dd_zone3_offset_number}"
+    id: dd_zone3_offset_number
+    icon: mdi:sine-wave
+    unit_of_measurement: "°C"
+    min_value: -10
+    max_value: 10
+    step: 1
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(dd_zone3_offset_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dd_zone3_offset_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v96 Offset c.o. Strefa 3 %.1f raw=%d (placeholder - backend 0x2B do zrobienia)", x, id(dd_zone3_offset_raw));
+          id(dd_zone3_offset_number).publish_state(x);
+
+  # v102: "Manage Zone" settings - Zone 2 (0x2A)
+  - platform: template
+    name: "${n_dd_number_dominus_comfort_heat_z2}"
+    id: dd_number_dominus_comfort_heat_z2
+    icon: mdi:fire
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(dd_dominus_comfort_heat_z2_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dd_dominus_comfort_heat_z2_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v102 Set Comfort Heat S2 %.1f raw=%d", x, id(dd_dominus_comfort_heat_z2_raw));
+          id(dd_number_dominus_comfort_heat_z2).publish_state(x);
+
+  - platform: template
+    name: "${n_dd_number_dominus_eco_heat_z2}"
+    id: dd_number_dominus_eco_heat_z2
+    icon: mdi:leaf
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(dd_dominus_eco_heat_z2_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dd_dominus_eco_heat_z2_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v102 Set Eco Heat S2 %.1f raw=%d", x, id(dd_dominus_eco_heat_z2_raw));
+          id(dd_number_dominus_eco_heat_z2).publish_state(x);
+
+  - platform: template
+    name: "${n_dd_number_dominus_comfort_cool_z2}"
+    id: dd_number_dominus_comfort_cool_z2
+    icon: mdi:snowflake
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(dd_dominus_comfort_cool_z2_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dd_dominus_comfort_cool_z2_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v102 Set Comfort Cool S2 %.1f raw=%d", x, id(dd_dominus_comfort_cool_z2_raw));
+          id(dd_number_dominus_comfort_cool_z2).publish_state(x);
+
+  - platform: template
+    name: "${n_dd_number_dominus_eco_cool_z2}"
+    id: dd_number_dominus_eco_cool_z2
+    icon: mdi:snowflake-thermometer
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(dd_dominus_eco_cool_z2_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dd_dominus_eco_cool_z2_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v102 Set Eco Cool S2 %.1f raw=%d", x, id(dd_dominus_eco_cool_z2_raw));
+          id(dd_number_dominus_eco_cool_z2).publish_state(x);
+
+  - platform: template
+    name: "${n_dd_number_dominus_humidity_z2}"
+    id: dd_number_dominus_humidity_z2
+    icon: mdi:water-percent
+    unit_of_measurement: "%"
+    min_value: 30
+    max_value: 90
+    step: 1
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(dd_dominus_humidity_z2_raw);
+    set_action:
+      - lambda: |-
+          id(dd_dominus_humidity_z2_raw) = (int) round(x);
+          ESP_LOGW("dd_control", "v102 Set Umidity S2 %.1f raw=%d", x, id(dd_dominus_humidity_z2_raw));
+          id(dd_number_dominus_humidity_z2).publish_state(x);
+
+  - platform: template
+    name: "${n_dd_number_dominus_set_flow_z2}"
+    id: dd_number_dominus_set_flow_z2
+    icon: mdi:coolant-temperature
+    unit_of_measurement: "°C"
+    min_value: 20
+    max_value: 55
+    step: 1
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(dd_dominus_set_flow_z2_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dd_dominus_set_flow_z2_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v102 Set Flow S2 %.1f raw=%d", x, id(dd_dominus_set_flow_z2_raw));
+          id(dd_number_dominus_set_flow_z2).publish_state(x);
+
+
+  # v102: "Manage Zone" settings - Zone 3 (0x2B)
+  - platform: template
+    name: "${n_dd_number_dominus_comfort_heat_z3}"
+    id: dd_number_dominus_comfort_heat_z3
+    icon: mdi:fire
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(dd_dominus_comfort_heat_z3_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dd_dominus_comfort_heat_z3_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v102 Set Comfort Heat S3 %.1f raw=%d", x, id(dd_dominus_comfort_heat_z3_raw));
+          id(dd_number_dominus_comfort_heat_z3).publish_state(x);
+
+  - platform: template
+    name: "${n_dd_number_dominus_eco_heat_z3}"
+    id: dd_number_dominus_eco_heat_z3
+    icon: mdi:leaf
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(dd_dominus_eco_heat_z3_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dd_dominus_eco_heat_z3_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v102 Set Eco Heat S3 %.1f raw=%d", x, id(dd_dominus_eco_heat_z3_raw));
+          id(dd_number_dominus_eco_heat_z3).publish_state(x);
+
+  - platform: template
+    name: "${n_dd_number_dominus_comfort_cool_z3}"
+    id: dd_number_dominus_comfort_cool_z3
+    icon: mdi:snowflake
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(dd_dominus_comfort_cool_z3_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dd_dominus_comfort_cool_z3_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v102 Set Comfort Cool S3 %.1f raw=%d", x, id(dd_dominus_comfort_cool_z3_raw));
+          id(dd_number_dominus_comfort_cool_z3).publish_state(x);
+
+  - platform: template
+    name: "${n_dd_number_dominus_eco_cool_z3}"
+    id: dd_number_dominus_eco_cool_z3
+    icon: mdi:snowflake-thermometer
+    unit_of_measurement: "°C"
+    min_value: 5
+    max_value: 35
+    step: 0.5
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(dd_dominus_eco_cool_z3_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dd_dominus_eco_cool_z3_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v102 Set Eco Cool S3 %.1f raw=%d", x, id(dd_dominus_eco_cool_z3_raw));
+          id(dd_number_dominus_eco_cool_z3).publish_state(x);
+
+  - platform: template
+    name: "${n_dd_number_dominus_humidity_z3}"
+    id: dd_number_dominus_humidity_z3
+    icon: mdi:water-percent
+    unit_of_measurement: "%"
+    min_value: 30
+    max_value: 90
+    step: 1
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(dd_dominus_humidity_z3_raw);
+    set_action:
+      - lambda: |-
+          id(dd_dominus_humidity_z3_raw) = (int) round(x);
+          ESP_LOGW("dd_control", "v102 Set Umidity S3 %.1f raw=%d", x, id(dd_dominus_humidity_z3_raw));
+          id(dd_number_dominus_humidity_z3).publish_state(x);
+
+  - platform: template
+    name: "${n_dd_number_dominus_set_flow_z3}"
+    id: dd_number_dominus_set_flow_z3
+    icon: mdi:coolant-temperature
+    unit_of_measurement: "°C"
+    min_value: 20
+    max_value: 55
+    step: 1
+    mode: slider
+    optimistic: false
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(dd_dominus_set_flow_z3_raw) / 10.0f;
+    set_action:
+      - lambda: |-
+          id(dd_dominus_set_flow_z3_raw) = (int) round(x * 10.0f);
+          ESP_LOGW("dd_control", "v102 Set Flow S3 %.1f raw=%d", x, id(dd_dominus_set_flow_z3_raw));
+          id(dd_number_dominus_set_flow_z3).publish_state(x);
+
+select:
+  # v100: switchable 5-option temp/humidity sources for Zone 2 and 3 (Panel/Basement/Ground floor/Upper floor/Whole house), default Panel.
+  - platform: template
+    name: "${n_dd_temp_source_z2_select}"
+    id: dd_temp_source_z2_select
+    icon: mdi:thermometer
+    optimistic: true
+    entity_category: config
+    options:
+      - "${t_dd_src_panel}"
+      - "${t_dd_src_basement}"
+      - "${t_dd_src_ground}"
+      - "${t_dd_src_upper}"
+      - "${t_dd_src_house}"
+    initial_option: "${t_dd_src_panel}"
+    set_action:
+      - lambda: |-
+          int idx = 1;
+          if (x == "${t_dd_src_basement}") idx = 2;
+          else if (x == "${t_dd_src_ground}") idx = 3;
+          else if (x == "${t_dd_src_upper}") idx = 4;
+          else if (x == "${t_dd_src_house}") idx = 5;
+          id(dd_temp_src_z2_idx) = idx;
+          switch (idx) {
+            case 1: id(dd_ha_room_temp_2_raw) = id(dd_ha_temp_raw_z2_1); break;
+            case 2: id(dd_ha_room_temp_2_raw) = id(dd_ha_temp_raw_z2_2); break;
+            case 3: id(dd_ha_room_temp_2_raw) = id(dd_ha_temp_raw_z2_3); break;
+            case 4: id(dd_ha_room_temp_2_raw) = id(dd_ha_temp_raw_z2_4); break;
+            case 5: id(dd_ha_room_temp_2_raw) = id(dd_ha_temp_raw_z2_5); break;
+          }
+          ESP_LOGW("dd_control", "v100 Zrodlo TEMP Strefy 2 -> %d (%s)", idx, x.c_str());
+  - platform: template
+    name: "${n_dd_temp_source_z3_select}"
+    id: dd_temp_source_z3_select
+    icon: mdi:thermometer
+    optimistic: true
+    entity_category: config
+    options:
+      - "${t_dd_src_panel}"
+      - "${t_dd_src_basement}"
+      - "${t_dd_src_ground}"
+      - "${t_dd_src_upper}"
+      - "${t_dd_src_house}"
+    initial_option: "${t_dd_src_panel}"
+    set_action:
+      - lambda: |-
+          int idx = 1;
+          if (x == "${t_dd_src_basement}") idx = 2;
+          else if (x == "${t_dd_src_ground}") idx = 3;
+          else if (x == "${t_dd_src_upper}") idx = 4;
+          else if (x == "${t_dd_src_house}") idx = 5;
+          id(dd_temp_src_z3_idx) = idx;
+          switch (idx) {
+            case 1: id(dd_ha_room_temp_3_raw) = id(dd_ha_temp_raw_z3_1); break;
+            case 2: id(dd_ha_room_temp_3_raw) = id(dd_ha_temp_raw_z3_2); break;
+            case 3: id(dd_ha_room_temp_3_raw) = id(dd_ha_temp_raw_z3_3); break;
+            case 4: id(dd_ha_room_temp_3_raw) = id(dd_ha_temp_raw_z3_4); break;
+            case 5: id(dd_ha_room_temp_3_raw) = id(dd_ha_temp_raw_z3_5); break;
+          }
+          ESP_LOGW("dd_control", "v100 Zrodlo TEMP Strefy 3 -> %d (%s)", idx, x.c_str());
+  - platform: template
+    name: "${n_dd_hum_source_z2_select}"
+    id: dd_hum_source_z2_select
+    icon: mdi:water-percent
+    optimistic: true
+    entity_category: config
+    options:
+      - "${t_dd_src_panel}"
+      - "${t_dd_src_basement}"
+      - "${t_dd_src_ground}"
+      - "${t_dd_src_upper}"
+      - "${t_dd_src_house}"
+    initial_option: "${t_dd_src_panel}"
+    set_action:
+      - lambda: |-
+          int idx = 1;
+          if (x == "${t_dd_src_basement}") idx = 2;
+          else if (x == "${t_dd_src_ground}") idx = 3;
+          else if (x == "${t_dd_src_upper}") idx = 4;
+          else if (x == "${t_dd_src_house}") idx = 5;
+          id(dd_hum_src_z2_idx) = idx;
+          switch (idx) {
+            case 1: id(dd_ha_room_humidity_2_raw) = id(dd_ha_hum_raw_z2_1); break;
+            case 2: id(dd_ha_room_humidity_2_raw) = id(dd_ha_hum_raw_z2_2); break;
+            case 3: id(dd_ha_room_humidity_2_raw) = id(dd_ha_hum_raw_z2_3); break;
+            case 4: id(dd_ha_room_humidity_2_raw) = id(dd_ha_hum_raw_z2_4); break;
+            case 5: id(dd_ha_room_humidity_2_raw) = id(dd_ha_hum_raw_z2_5); break;
+          }
+          ESP_LOGW("dd_control", "v100 Zrodlo WILG Strefy 2 -> %d (%s)", idx, x.c_str());
+  - platform: template
+    name: "${n_dd_hum_source_z3_select}"
+    id: dd_hum_source_z3_select
+    icon: mdi:water-percent
+    optimistic: true
+    entity_category: config
+    options:
+      - "${t_dd_src_panel}"
+      - "${t_dd_src_basement}"
+      - "${t_dd_src_ground}"
+      - "${t_dd_src_upper}"
+      - "${t_dd_src_house}"
+    initial_option: "${t_dd_src_panel}"
+    set_action:
+      - lambda: |-
+          int idx = 1;
+          if (x == "${t_dd_src_basement}") idx = 2;
+          else if (x == "${t_dd_src_ground}") idx = 3;
+          else if (x == "${t_dd_src_upper}") idx = 4;
+          else if (x == "${t_dd_src_house}") idx = 5;
+          id(dd_hum_src_z3_idx) = idx;
+          switch (idx) {
+            case 1: id(dd_ha_room_humidity_3_raw) = id(dd_ha_hum_raw_z3_1); break;
+            case 2: id(dd_ha_room_humidity_3_raw) = id(dd_ha_hum_raw_z3_2); break;
+            case 3: id(dd_ha_room_humidity_3_raw) = id(dd_ha_hum_raw_z3_3); break;
+            case 4: id(dd_ha_room_humidity_3_raw) = id(dd_ha_hum_raw_z3_4); break;
+            case 5: id(dd_ha_room_humidity_3_raw) = id(dd_ha_hum_raw_z3_5); break;
+          }
+          ESP_LOGW("dd_control", "v100 Zrodlo WILG Strefy 3 -> %d (%s)", idx, x.c_str());
+
+sensor:
+  # v101: HA sources for Zone 2/3 (slots 2-5). Slot 1 "${t_dd_src_panel}" NOT from HA - real PDU 2005/2006 of the panel
+  # 0x2A/0x2B (handle_pdu -> ha_temp/hum_raw_z2/z3_1). Each writes its buffer; the active one (idx) -> output.
+  - platform: homeassistant
+    id: dd_ha_temp_in_z2_2
+    entity_id: ${dd_temp_src_z2_2}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_temp_raw_z2_2) = (int) roundf(x * 10.0f);
+            if (id(dd_temp_src_z2_idx) == 2) id(dd_ha_room_temp_2_raw) = id(dd_ha_temp_raw_z2_2); }
+  - platform: homeassistant
+    id: dd_ha_temp_in_z2_3
+    entity_id: ${dd_temp_src_z2_3}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_temp_raw_z2_3) = (int) roundf(x * 10.0f);
+            if (id(dd_temp_src_z2_idx) == 3) id(dd_ha_room_temp_2_raw) = id(dd_ha_temp_raw_z2_3); }
+  - platform: homeassistant
+    id: dd_ha_temp_in_z2_4
+    entity_id: ${dd_temp_src_z2_4}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_temp_raw_z2_4) = (int) roundf(x * 10.0f);
+            if (id(dd_temp_src_z2_idx) == 4) id(dd_ha_room_temp_2_raw) = id(dd_ha_temp_raw_z2_4); }
+  - platform: homeassistant
+    id: dd_ha_temp_in_z2_5
+    entity_id: ${dd_temp_src_z2_5}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_temp_raw_z2_5) = (int) roundf(x * 10.0f);
+            if (id(dd_temp_src_z2_idx) == 5) id(dd_ha_room_temp_2_raw) = id(dd_ha_temp_raw_z2_5); }
+  - platform: homeassistant
+    id: dd_ha_hum_in_z2_2
+    entity_id: ${dd_hum_src_z2_2}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_hum_raw_z2_2) = (int) roundf(x);
+            if (id(dd_hum_src_z2_idx) == 2) id(dd_ha_room_humidity_2_raw) = id(dd_ha_hum_raw_z2_2); }
+  - platform: homeassistant
+    id: dd_ha_hum_in_z2_3
+    entity_id: ${dd_hum_src_z2_3}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_hum_raw_z2_3) = (int) roundf(x);
+            if (id(dd_hum_src_z2_idx) == 3) id(dd_ha_room_humidity_2_raw) = id(dd_ha_hum_raw_z2_3); }
+  - platform: homeassistant
+    id: dd_ha_hum_in_z2_4
+    entity_id: ${dd_hum_src_z2_4}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_hum_raw_z2_4) = (int) roundf(x);
+            if (id(dd_hum_src_z2_idx) == 4) id(dd_ha_room_humidity_2_raw) = id(dd_ha_hum_raw_z2_4); }
+  - platform: homeassistant
+    id: dd_ha_hum_in_z2_5
+    entity_id: ${dd_hum_src_z2_5}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_hum_raw_z2_5) = (int) roundf(x);
+            if (id(dd_hum_src_z2_idx) == 5) id(dd_ha_room_humidity_2_raw) = id(dd_ha_hum_raw_z2_5); }
+  - platform: homeassistant
+    id: dd_ha_temp_in_z3_2
+    entity_id: ${dd_temp_src_z3_2}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_temp_raw_z3_2) = (int) roundf(x * 10.0f);
+            if (id(dd_temp_src_z3_idx) == 2) id(dd_ha_room_temp_3_raw) = id(dd_ha_temp_raw_z3_2); }
+  - platform: homeassistant
+    id: dd_ha_temp_in_z3_3
+    entity_id: ${dd_temp_src_z3_3}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_temp_raw_z3_3) = (int) roundf(x * 10.0f);
+            if (id(dd_temp_src_z3_idx) == 3) id(dd_ha_room_temp_3_raw) = id(dd_ha_temp_raw_z3_3); }
+  - platform: homeassistant
+    id: dd_ha_temp_in_z3_4
+    entity_id: ${dd_temp_src_z3_4}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_temp_raw_z3_4) = (int) roundf(x * 10.0f);
+            if (id(dd_temp_src_z3_idx) == 4) id(dd_ha_room_temp_3_raw) = id(dd_ha_temp_raw_z3_4); }
+  - platform: homeassistant
+    id: dd_ha_temp_in_z3_5
+    entity_id: ${dd_temp_src_z3_5}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_temp_raw_z3_5) = (int) roundf(x * 10.0f);
+            if (id(dd_temp_src_z3_idx) == 5) id(dd_ha_room_temp_3_raw) = id(dd_ha_temp_raw_z3_5); }
+  - platform: homeassistant
+    id: dd_ha_hum_in_z3_2
+    entity_id: ${dd_hum_src_z3_2}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_hum_raw_z3_2) = (int) roundf(x);
+            if (id(dd_hum_src_z3_idx) == 2) id(dd_ha_room_humidity_3_raw) = id(dd_ha_hum_raw_z3_2); }
+  - platform: homeassistant
+    id: dd_ha_hum_in_z3_3
+    entity_id: ${dd_hum_src_z3_3}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_hum_raw_z3_3) = (int) roundf(x);
+            if (id(dd_hum_src_z3_idx) == 3) id(dd_ha_room_humidity_3_raw) = id(dd_ha_hum_raw_z3_3); }
+  - platform: homeassistant
+    id: dd_ha_hum_in_z3_4
+    entity_id: ${dd_hum_src_z3_4}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_hum_raw_z3_4) = (int) roundf(x);
+            if (id(dd_hum_src_z3_idx) == 4) id(dd_ha_room_humidity_3_raw) = id(dd_ha_hum_raw_z3_4); }
+  - platform: homeassistant
+    id: dd_ha_hum_in_z3_5
+    entity_id: ${dd_hum_src_z3_5}
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!std::isnan(x)) { id(dd_ha_hum_raw_z3_5) = (int) roundf(x);
+            if (id(dd_hum_src_z3_idx) == 5) id(dd_ha_room_humidity_3_raw) = id(dd_ha_hum_raw_z3_5); }
+
+  - platform: template
+    name: "${n_dd_sensor_zone2_humidity}"
+    id: dd_sensor_zone2_humidity
+    icon: mdi:water-percent
+    unit_of_measurement: "%"
+    state_class: measurement
+    accuracy_decimals: 0
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(dd_ha_room_humidity_2_raw);
+    update_interval: 5s
+
+  - platform: template
+    name: "${n_dd_sensor_zone3_humidity}"
+    id: dd_sensor_zone3_humidity
+    icon: mdi:water-percent
+    unit_of_measurement: "%"
+    state_class: measurement
+    accuracy_decimals: 0
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(dd_ha_room_humidity_3_raw);
+    update_interval: 5s
+
+  - platform: template
+    name: "${n_dd_sensor_zone2_temp}"
+    id: dd_sensor_zone2_temp
+    icon: mdi:home-thermometer-outline
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return NAN;
+      return id(dd_ha_room_temp_2_raw) / 10.0f;
+    update_interval: 5s
+
+  - platform: template
+    name: "${n_dd_sensor_zone3_temp}"
+    id: dd_sensor_zone3_temp
+    icon: mdi:home-thermometer-outline
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return NAN;
+      return id(dd_ha_room_temp_3_raw) / 10.0f;
+    update_interval: 5s
+
+  - platform: template
+    name: "${n_dd_sensor_panel2_version}"
+    id: dd_sensor_panel2_version
+    icon: mdi:monitor-dashboard
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    lambda: |-
+      if (id(dd_pdu_2a_version_raw) == 0) return {};
+      return id(dd_pdu_2a_version_raw) / 100.0f;
+    update_interval: 30s
+
+  - platform: template
+    name: "${n_dd_sensor_panel3_version}"
+    id: dd_sensor_panel3_version
+    icon: mdi:monitor-dashboard
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    lambda: |-
+      if (id(dd_pdu_2b_version_raw) == 0) return {};
+      return id(dd_pdu_2b_version_raw) / 100.0f;
+    update_interval: 30s
+
+text_sensor:
+  # v96: Zone 2 operating phase (Comfort/Eco/Manual) from dd_zone2_status_raw. Placeholder - the boiler writes
+  # zone 2 status only in a multi-zone setup (A13); with no data shows "—".
+  - platform: template
+    name: "${n_dd_zone2_phase_text}"
+    id: dd_zone2_phase_text
+    icon: mdi:home-thermometer
+    update_interval: 10s
+    lambda: |-
+      if (!id(dd_emulate_2a_diag)) return std::string("—");
+      int lb = id(dd_zone2_status_raw) & 0xFF;
+      if (lb & 0x40) return std::string("${t_dd_phase_comfort}");
+      if (lb & 0x80) return std::string("${t_dd_phase_eco}");
+      if (lb & 0x04) return std::string("${t_dd_phase_manual}");
+      if (lb == 0x01) return std::string("${t_dd_phase_purge}");  // U50 (2010 = 1)
+      return std::string("—");
+
+  # v96: Zone 3 operating phase (Comfort/Eco/Manual) from dd_zone3_status_raw. Placeholder like Zone 2.
+  - platform: template
+    name: "${n_dd_zone3_phase_text}"
+    id: dd_zone3_phase_text
+    icon: mdi:home-thermometer
+    update_interval: 10s
+    lambda: |-
+      if (!id(dd_emulate_2b_diag)) return std::string("—");
+      int lb = id(dd_zone3_status_raw) & 0xFF;
+      if (lb & 0x40) return std::string("${t_dd_phase_comfort}");
+      if (lb & 0x80) return std::string("${t_dd_phase_eco}");
+      if (lb & 0x04) return std::string("${t_dd_phase_manual}");
+      if (lb == 0x01) return std::string("${t_dd_phase_purge}");  // U50 (2010 = 1)
+      return std::string("—");
+
+binary_sensor:
+  - platform: template
+    name: "${n_dd_bs_panel2_online}"
+    id: dd_bs_panel2_online
+    device_class: connectivity
+    entity_category: diagnostic
+    lambda: |-
+      if (id(dd_last_2a_read_ms) == 0) return false;
+      return (millis() - id(dd_last_2a_read_ms)) < 30000;
+
+  - platform: template
+    name: "${n_dd_bs_panel3_online}"
+    id: dd_bs_panel3_online
+    device_class: connectivity
+    entity_category: diagnostic
+    lambda: |-
+      if (id(dd_last_2b_read_ms) == 0) return false;
+      return (millis() - id(dd_last_2b_read_ms)) < 30000;
+
+climate:
+  # Zone 2/3: same model. Current temperature = the zone's room value (NAN when that zone's panel emulation
+  # is OFF); phase/request from 2010 written to 0x2A/0x2B (multi-zone setups only, A13).
+  - platform: dd_bus_climate
+    name: "${n_dd_co_thermostat_2}"
+    id: dd_co_thermostat_2
+    icon: mdi:radiator
+    update_interval: 2s
+    supported_modes: [HEAT, COOL]
+    visual:
+      min_temperature: 5
+      max_temperature: 35
+      temperature_step:
+        target_temperature: 0.5
+        current_temperature: 0.1
+    current_temperature_lambda: |-
+      if (!id(dd_emulate_2a_diag) || id(dd_ha_room_temp_2_raw) <= 0) return NAN;
+      return id(dd_ha_room_temp_2_raw) / 10.0f;
+    target_temperature_lambda: |-
+      return id(dd_zone2_setpoint_raw) / 10.0f;
+    mode_lambda: |-
+      switch (id(dd_operating_mode_reported)) {
+        case 3: return climate::CLIMATE_MODE_HEAT;
+        case 2: return climate::CLIMATE_MODE_COOL;
+        default: return climate::CLIMATE_MODE_OFF;
+      }
+    action_lambda: |-
+      int m = id(dd_operating_mode_reported);
+      if (m != 2 && m != 3) return climate::CLIMATE_ACTION_OFF;
+      if ((id(dd_zone2_status_raw) & 0x08) == 0) return climate::CLIMATE_ACTION_IDLE;
+      return (m == 3) ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_COOLING;
+    set_target_temperature_action:
+      - lambda: |-
+          id(dd_zone2_setpoint_number).make_call().set_value(x).perform();
+    supported_presets: [COMFORT, ECO, NONE]
+    preset_lambda: |-
+      int st = id(dd_zone2_status_raw) & 0xFF;
+      if (st & 0x40) return std::string("COMFORT");
+      if (st & 0x80) return std::string("ECO");
+      if (st & 0x04) return std::string("NONE");
+      return {};
+    set_preset_action:
+      - lambda: |-
+          bool cool = (id(dd_operating_mode_reported) == 2);
+          int raw;
+          if (x == "COMFORT") raw = cool ? id(dd_dominus_comfort_cool_z2_raw) : id(dd_dominus_comfort_heat_z2_raw);
+          else if (x == "ECO") raw = cool ? id(dd_dominus_eco_cool_z2_raw) : id(dd_dominus_eco_heat_z2_raw);
+          else return;
+          id(dd_zone2_setpoint_number).make_call().set_value(raw / 10.0f).perform();
+
+  - platform: dd_bus_climate
+    name: "${n_dd_co_thermostat_3}"
+    id: dd_co_thermostat_3
+    icon: mdi:radiator
+    update_interval: 2s
+    supported_modes: [HEAT, COOL]
+    visual:
+      min_temperature: 5
+      max_temperature: 35
+      temperature_step:
+        target_temperature: 0.5
+        current_temperature: 0.1
+    current_temperature_lambda: |-
+      if (!id(dd_emulate_2b_diag) || id(dd_ha_room_temp_3_raw) <= 0) return NAN;
+      return id(dd_ha_room_temp_3_raw) / 10.0f;
+    target_temperature_lambda: |-
+      return id(dd_zone3_setpoint_raw) / 10.0f;
+    mode_lambda: |-
+      switch (id(dd_operating_mode_reported)) {
+        case 3: return climate::CLIMATE_MODE_HEAT;
+        case 2: return climate::CLIMATE_MODE_COOL;
+        default: return climate::CLIMATE_MODE_OFF;
+      }
+    action_lambda: |-
+      int m = id(dd_operating_mode_reported);
+      if (m != 2 && m != 3) return climate::CLIMATE_ACTION_OFF;
+      if ((id(dd_zone3_status_raw) & 0x08) == 0) return climate::CLIMATE_ACTION_IDLE;
+      return (m == 3) ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_COOLING;
+    set_target_temperature_action:
+      - lambda: |-
+          id(dd_zone3_setpoint_number).make_call().set_value(x).perform();
+    supported_presets: [COMFORT, ECO, NONE]
+    preset_lambda: |-
+      int st = id(dd_zone3_status_raw) & 0xFF;
+      if (st & 0x40) return std::string("COMFORT");
+      if (st & 0x80) return std::string("ECO");
+      if (st & 0x04) return std::string("NONE");
+      return {};
+    set_preset_action:
+      - lambda: |-
+          bool cool = (id(dd_operating_mode_reported) == 2);
+          int raw;
+          if (x == "COMFORT") raw = cool ? id(dd_dominus_comfort_cool_z3_raw) : id(dd_dominus_comfort_heat_z3_raw);
+          else if (x == "ECO") raw = cool ? id(dd_dominus_eco_cool_z3_raw) : id(dd_dominus_eco_heat_z3_raw);
+          else return;
+          id(dd_zone3_setpoint_number).make_call().set_value(raw / 10.0f).perform();

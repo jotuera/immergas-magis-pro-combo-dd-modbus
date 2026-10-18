@@ -1,18 +1,19 @@
-# Immergas Magis Pro / Combo D+/D- emulator - package "boiler_info"
+# Immergas Magis Pro / Combo D+/D- emulator - package "dd_boiler_info"
 # Boiler data written to the panel: D04, generators, clock/date, outdoor temperature, A13, A11, D91,
 # fault code/text, status flags.
 # Part of jotuera/immergas-magis-pro-combo-dd-modbus (MIT). Loaded by the main YAML through `packages:`.
+# File and id names start with dd_ so this repo can be combined with the T-/T+ and F1/F2 repos on one device.
 
 select:
   # Language of the fault texts (description + "no fault" code). Restored across reboots.
   - platform: template
-    name: "${n_fault_lang}"
-    id: fault_lang
+    name: "${n_dd_fault_lang}"
+    id: dd_fault_lang
     icon: mdi:translate
     entity_category: config
     optimistic: true
     restore_value: true
-    initial_option: "${fault_language}"  # default from the language file
+    initial_option: "${dd_fault_language}"  # default from the language file
     options:
       - "English"
       - "Italiano"
@@ -24,8 +25,8 @@ select:
 sensor:
   # 3003 = heating-curve flow setpoint (0 without demand)
   - platform: template
-    name: "${n_sniff_29_w_3003}"
-    id: sniff_29_w_3003
+    name: "${n_dd_sniff_29_w_3003}"
+    id: dd_sniff_29_w_3003
     icon: mdi:thermometer
     device_class: temperature
     state_class: measurement
@@ -34,8 +35,8 @@ sensor:
     update_interval: never
   # 3011 = main generator (heat pump) flow
   - platform: template
-    name: "${n_sniff_29_w_3011}"
-    id: sniff_29_w_3011
+    name: "${n_dd_sniff_29_w_3011}"
+    id: dd_sniff_29_w_3011
     icon: mdi:thermometer
     device_class: temperature
     state_class: measurement
@@ -44,8 +45,8 @@ sensor:
     update_interval: never
   # 3012 = main generator (heat pump) return
   - platform: template
-    name: "${n_sniff_29_w_3012}"
-    id: sniff_29_w_3012
+    name: "${n_dd_sniff_29_w_3012}"
+    id: dd_sniff_29_w_3012
     icon: mdi:thermometer
     device_class: temperature
     state_class: measurement
@@ -54,8 +55,8 @@ sensor:
     update_interval: never
   # 3013 = secondary generator (gas boiler) flow ("Flow temp. 2")
   - platform: template
-    name: "${n_sniff_29_w_3013}"
-    id: sniff_29_w_3013
+    name: "${n_dd_sniff_29_w_3013}"
+    id: dd_sniff_29_w_3013
     icon: mdi:thermometer
     device_class: temperature
     state_class: measurement
@@ -64,8 +65,8 @@ sensor:
     update_interval: never
   # 3014 = secondary generator return ("Return temp. 2")
   - platform: template
-    name: "${n_sniff_29_w_3014}"
-    id: sniff_29_w_3014
+    name: "${n_dd_sniff_29_w_3014}"
+    id: dd_sniff_29_w_3014
     icon: mdi:thermometer
     device_class: temperature
     state_class: measurement
@@ -73,8 +74,8 @@ sensor:
     accuracy_decimals: 1
     update_interval: never
   - platform: template
-    name: "${n_sniff_33_w_4199}"
-    id: sniff_33_w_4199
+    name: "${n_dd_sniff_33_w_4199}"
+    id: dd_sniff_33_w_4199
     icon: mdi:numeric
     entity_category: diagnostic
     state_class: measurement  # integer: HA shows "1", not "1.0"
@@ -82,44 +83,44 @@ sensor:
     update_interval: never
 
   - platform: template
-    name: "${n_outside_temp_sensor}"
-    id: outside_temp_sensor
+    name: "${n_dd_outside_temp_sensor}"
+    id: dd_outside_temp_sensor
     icon: mdi:thermometer
     unit_of_measurement: "°C"
     accuracy_decimals: 1
     device_class: temperature
     state_class: measurement
     lambda: |-
-      if (id(outside_temp_raw) == 0) return {};
-      return id(outside_temp_raw) / 10.0f;
+      if (id(dd_outside_temp_raw) == 0) return {};
+      return id(dd_outside_temp_raw) / 10.0f;
     update_interval: 5s
 
   - platform: template
-    name: "${n_sensor_pdu_29_3031_version}"
-    id: sensor_pdu_29_3031_version
+    name: "${n_dd_sensor_pdu_29_3031_version}"
+    id: dd_sensor_pdu_29_3031_version
     icon: mdi:chip
     entity_category: diagnostic
     accuracy_decimals: 2
     lambda: |-
-      if (id(pdu_29_3031_raw) == 0) return {};
-      return id(pdu_29_3031_raw) / 100.0f;
+      if (id(dd_pdu_29_3031_raw) == 0) return {};
+      return id(dd_pdu_29_3031_raw) / 100.0f;
     update_interval: 30s
 
   - platform: template
-    name: "${n_sensor_pdu_29_3042_version}"
-    id: sensor_pdu_29_3042_version
+    name: "${n_dd_sensor_pdu_29_3042_version}"
+    id: dd_sensor_pdu_29_3042_version
     icon: mdi:monitor-dashboard
     entity_category: diagnostic
     accuracy_decimals: 2
     lambda: |-
-      if (id(pdu_29_3042_raw) == 0) return {};
-      return id(pdu_29_3042_raw) / 100.0f;
+      if (id(dd_pdu_29_3042_raw) == 0) return {};
+      return id(dd_pdu_29_3042_raw) / 100.0f;
     update_interval: 30s
 
 text_sensor:
   - platform: template
-    name: "${n_sniff_clock_2300}"
-    id: sniff_clock_2300
+    name: "${n_dd_sniff_clock_2300}"
+    id: dd_sniff_clock_2300
     icon: mdi:clock-outline
     update_interval: never
   # v91: boiler fault code as "E<code>" (e.g. E142) instead of the raw number (142.0). "None" when 0.
@@ -131,7 +132,7 @@ text_sensor:
     update_interval: 10s
     lambda: |-
       int c = id(dd_err_code);
-      if (c == 0) return std::string(faults::no_fault_code(id(fault_lang).active_index().value_or(0)));
+      if (c == 0) return std::string(faults::no_fault_code(id(dd_fault_lang).active_index().value_or(0)));
       char b[8];
       snprintf(b, sizeof(b), "E%02d", c);
       return std::string(b);
@@ -146,21 +147,21 @@ text_sensor:
     entity_category: diagnostic
     update_interval: 10s
     lambda: |-
-      return faults::describe(id(dd_err_code), id(fault_lang).active_index().value_or(0));
+      return faults::describe(id(dd_err_code), id(dd_fault_lang).active_index().value_or(0));
 
   # v106: removed the "Atom operating mode" entity (diagnostic emulation-mode text - unnecessary).
   - platform: template
-    name: "${n_controller_date_text}"
-    id: controller_date_text
+    name: "${n_dd_controller_date_text}"
+    id: dd_controller_date_text
     icon: mdi:calendar-clock
     entity_category: diagnostic
     update_interval: 30s
     lambda: |-
-      if (id(pdu_29_2302_raw) == 0 || id(pdu_29_2303_raw) == 0) return {};
-      uint16_t raw = (uint16_t) id(pdu_29_2302_raw);
+      if (id(dd_pdu_29_2302_raw) == 0 || id(dd_pdu_29_2303_raw) == 0) return {};
+      uint16_t raw = (uint16_t) id(dd_pdu_29_2302_raw);
       int day = (raw >> 8) & 0xFF;
       int month = raw & 0xFF;
-      int year = id(pdu_29_2303_raw);
+      int year = id(dd_pdu_29_2303_raw);
       if (day < 1 || day > 31 || month < 1 || month > 12 || year < 2000 || year > 2099) return {};
       char buf[16];
       snprintf(buf, sizeof(buf), "%02d.%02d.%04d", day, month, year);
@@ -172,18 +173,18 @@ text_sensor:
 binary_sensor:
   # 0x29 W 6150 = heat-pump module present (0 with A11 = OFF; the boiler then stops polling 0x1E)
   - platform: template
-    name: "${n_piec_modul_pc_obecny}"
-    id: piec_modul_pc_obecny
+    name: "${n_dd_piec_modul_pc_obecny}"
+    id: dd_piec_modul_pc_obecny
     icon: mdi:heat-pump-outline
     entity_category: diagnostic
   # v1.3.0: 0x29 W 2001 status flags (bit 0 = DHW request pending, bit 2 = active boiler fault/anomaly)
   - platform: template
-    name: "${n_piec_zadanie_cwu_oczek}"
-    id: piec_zadanie_cwu_oczek
+    name: "${n_dd_piec_zadanie_cwu_oczek}"
+    id: dd_piec_zadanie_cwu_oczek
     icon: mdi:water-boiler-alert
   - platform: template
-    name: "${n_piec_blad_aktywny_2001}"
-    id: piec_blad_aktywny_2001
+    name: "${n_dd_piec_blad_aktywny_2001}"
+    id: dd_piec_blad_aktywny_2001
     device_class: problem
   # v71: boiler fault flag = PDU 2100 != 0; reset available = PDU 2101 LB bit1 (per Dominus config).
   - platform: template

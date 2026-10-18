@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.0.0
+
+- **Naming scheme shared with tt-bms** (`dd_` prefix) so the Immergas repos can be combined on one device:
+  packages `packages/dd_*.yaml`, languages `packages/lang/dd_en|dd_pl|dd_it.yaml`, component `dd_bus_climate`,
+  ids `dd_*`, substitutions `dd_*` / `n_dd_*` / `t_dd_*`.
+- Device settings (esp32, logger, debug, device-health sensors) moved from `core` to the main YAML.
+- Entity names unchanged (no new entities in HA). Restored values are migrated once from the old global ids
+  (`dd_migrated_v2`); the legacy globals will be removed in a later release.
+- **Breaking:** new main YAML (file list, `dd_` substitutions).
+
 ## v1.6.0
 
 - **Translations**: entity names and the texts shown in HA come from a language file - `packages/lang/en.yaml`, `pl.yaml` or `it.yaml` (Italian: texts and fault descriptions translated, entity names still English - contributions welcome, see TRANSLATING.md). English output is unchanged.

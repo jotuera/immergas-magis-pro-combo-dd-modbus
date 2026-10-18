@@ -6,56 +6,75 @@
 # setpoints, weekly schedules, operating mode and boiler faults. See README.md for wiring, the register
 # map and setup.
 #
-# Project : jotuera.immergas-magis-pro-combo-dd-modbus  |  v1.6.0
+# Project : jotuera.immergas-magis-pro-combo-dd-modbus  |  v2.0.0
 # Repo    : https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus
 # License : MIT (c) 2026 JoTu
 # Tested  : Magis Combo V2 (MPROCOMBOV2). Other Immergas engines use different register maps - untested.
 #
 # Changelog: CHANGELOG.md
 #
-# This file is all you copy into ESPHome. The code lives in packages/*.yaml of the repo and is fetched from GitHub
+# This file is all you copy into ESPHome. The code lives in packages/dd_*.yaml of the repo and is fetched from GitHub
 # (packages: below). Keep the list of files complete - the packages depend on each other.
-# Language: pick ONE file from packages/lang/ (en, pl, it). Any single name or text can be overridden in
-# substitutions: below, e.g.  n_zone1_setpoint_number: "Immergas - My setpoint". Setpoint step: setpoint_step: "0.5".
+# Language: pick ONE file from packages/lang/ (dd_en, dd_pl, dd_it). Any single name or text can be overridden in
+# substitutions: below, e.g.  n_dd_zone1_setpoint_number: "Immergas - My setpoint". Setpoint step: dd_setpoint_step: "0.5".
+# File, id and substitution names start with dd_ so this repo can be combined with tt-bms / f1f2-nasa on one device.
 
 substitutions:
   # v64 HYBRID: 4 temp/humidity sources for the emulated panel 0x29 (Basement/Ground/Upper/House).
   # Pick the active source with a dropdown in HA. Default = Upper floor (3). Put your own entity_id.
   # v101: 5 sources for Zone 1: 1=Panel (REAL PDU 2005/2006 of the physical panel 0x29 - NOT from HA),
   # 2=Basement, 3=Ground floor, 4=Upper floor, 5=Whole house. Default Upper floor (idx 4). Sources 2-5 = HA entities:
-  temp_src_2: sensor.srednia_temperatura_piwnica
-  temp_src_3: input_number.srednia_temepratura_parter
-  temp_src_4: sensor.srednia_temperatura_pietro
-  temp_src_5: sensor.srednia_temperatura_dom
-  hum_src_2: sensor.srednia_wilgotnosc_piwnica
-  hum_src_3: sensor.srednia_wilgotnosc_parter
-  hum_src_4: sensor.srednia_wilgotnosc_pietro
-  hum_src_5: sensor.srednia_wilgotnosc_dom
+  dd_temp_src_2: sensor.srednia_temperatura_piwnica
+  dd_temp_src_3: input_number.srednia_temepratura_parter
+  dd_temp_src_4: sensor.srednia_temperatura_pietro
+  dd_temp_src_5: sensor.srednia_temperatura_dom
+  dd_hum_src_2: sensor.srednia_wilgotnosc_piwnica
+  dd_hum_src_3: sensor.srednia_wilgotnosc_parter
+  dd_hum_src_4: sensor.srednia_wilgotnosc_pietro
+  dd_hum_src_5: sensor.srednia_wilgotnosc_dom
   # v94: temp/humidity sources for Zone 2 and 3 (placeholder - put your own entity_id).
   # v101: temp/humidity sources for Zone 2/3. Slot 1 "Panel" = REAL PDU 2005/2006 of the physical panel
   # 0x2A/0x2B (not from HA); slots 2-5 = HA entities (put your own entity_id, dropdown picks the active one).
-  temp_src_z2_2: sensor.temperatura_strefa_2_2
-  temp_src_z2_3: sensor.temperatura_strefa_2_3
-  temp_src_z2_4: sensor.temperatura_strefa_2_4
-  hum_src_z2_2: sensor.wilgotnosc_strefa_2_2
-  hum_src_z2_3: sensor.wilgotnosc_strefa_2_3
-  hum_src_z2_4: sensor.wilgotnosc_strefa_2_4
-  temp_src_z3_2: sensor.temperatura_strefa_3_2
-  temp_src_z3_3: sensor.temperatura_strefa_3_3
-  temp_src_z3_4: sensor.temperatura_strefa_3_4
-  hum_src_z3_2: sensor.wilgotnosc_strefa_3_2
-  hum_src_z3_3: sensor.wilgotnosc_strefa_3_3
-  hum_src_z3_4: sensor.wilgotnosc_strefa_3_4
-  temp_src_z2_5: sensor.temperatura_strefa_2_5
-  hum_src_z2_5: sensor.wilgotnosc_strefa_2_5
-  temp_src_z3_5: sensor.temperatura_strefa_3_5
-  hum_src_z3_5: sensor.wilgotnosc_strefa_3_5
-
-  # v110: project metadata (author / GitHub repo). After publishing, set the correct repo URL.
+  dd_temp_src_z2_2: sensor.temperatura_strefa_2_2
+  dd_temp_src_z2_3: sensor.temperatura_strefa_2_3
+  dd_temp_src_z2_4: sensor.temperatura_strefa_2_4
+  dd_hum_src_z2_2: sensor.wilgotnosc_strefa_2_2
+  dd_hum_src_z2_3: sensor.wilgotnosc_strefa_2_3
+  dd_hum_src_z2_4: sensor.wilgotnosc_strefa_2_4
+  dd_temp_src_z3_2: sensor.temperatura_strefa_3_2
+  dd_temp_src_z3_3: sensor.temperatura_strefa_3_3
+  dd_temp_src_z3_4: sensor.temperatura_strefa_3_4
+  dd_hum_src_z3_2: sensor.wilgotnosc_strefa_3_2
+  dd_hum_src_z3_3: sensor.wilgotnosc_strefa_3_3
+  dd_hum_src_z3_4: sensor.wilgotnosc_strefa_3_4
+  dd_temp_src_z2_5: sensor.temperatura_strefa_2_5
+  dd_hum_src_z2_5: sensor.wilgotnosc_strefa_2_5
+  dd_temp_src_z3_5: sensor.temperatura_strefa_3_5
+  dd_hum_src_z3_5: sensor.wilgotnosc_strefa_3_5
+  # RS485 pins - change only if your wiring differs from M5Stack Atom + RS485 unit:
+  # dd_uart_tx_pin: GPIO26
+  # dd_uart_rx_pin: GPIO32
+  # dd_uart_de_pin: GPIO23
 
 esphome:
   name: immergas-dd-atom
   friendly_name: Immergas D+D- Atom
+  min_version: 2026.9.0
+
+esp32:
+  board: m5stack-atom
+  framework:
+    type: esp-idf
+
+logger:
+  # INFO in normal use (DEBUG logs every bus frame); switch to DEBUG only for bus sniffing sessions.
+  level: INFO
+  baud_rate: 0
+
+# Runtime diagnostics (reset reason, loop time, free heap): tell a reboot or a blocked loop from an entity glitch.
+
+debug:
+  update_interval: 10s
 
 wifi:
   ssid: !secret wifi_ssid
@@ -87,21 +106,46 @@ web_server:
     username: !secret web_username
     password: !secret web_password
 
+# Device health (one set per device - if you combine several Immergas buses on one Atom, keep only one).
+sensor:
+  - platform: uptime
+    name: "${n_dd_uptime}"
+    entity_category: diagnostic
+    update_interval: 10s
+  - platform: wifi_signal
+    name: "${n_dd_wifi_signal}"
+    entity_category: diagnostic
+    update_interval: 30s
+  - platform: debug
+    loop_time:
+      name: "${n_dd_loop_time}"
+      entity_category: diagnostic
+    free:
+      name: "${n_dd_free_heap}"
+      entity_category: diagnostic
+
+text_sensor:
+  - platform: debug
+    reset_reason:
+      name: "${n_dd_reset_reason}"
+      entity_category: diagnostic
+
 # The emulator itself, downloaded from GitHub. Change "ref" to upgrade (or "main" for the development version).
+# All dd_ packages are required (they depend on each other); pick one language file.
 packages:
   dd_modbus:
     url: https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus
-    ref: v1.6.0
+    ref: v2.0.0
     refresh: 1d
     files:
-      - packages/core.yaml
-      - packages/engine.yaml
-      - packages/zone1.yaml
-      - packages/zones23.yaml
-      - packages/dhw.yaml
-      - packages/dominus.yaml
-      - packages/schedules.yaml
-      - packages/heat_pump.yaml
-      - packages/boiler_info.yaml
-      - packages/diagnostics.yaml
-      - packages/lang/en.yaml      # language of the entity names and texts: en | pl | it
+      - packages/dd_core.yaml
+      - packages/dd_engine.yaml
+      - packages/dd_zone1.yaml
+      - packages/dd_zones23.yaml
+      - packages/dd_dhw.yaml
+      - packages/dd_dominus.yaml
+      - packages/dd_schedules.yaml
+      - packages/dd_heat_pump.yaml
+      - packages/dd_boiler_info.yaml
+      - packages/dd_diagnostics.yaml
+      - packages/lang/dd_en.yaml       # language of entity names and texts: dd_en | dd_pl | dd_it

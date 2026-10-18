@@ -1,11 +1,154 @@
-# Immergas Magis Pro / Combo D+/D- emulator - package "engine"
+# Immergas Magis Pro / Combo D+/D- emulator - package "dd_engine"
 # Bus engine: globals, the 10 ms RX/TX loop (handle_pdu, emulated Dominus 0x33 and zone panels 0x29/0x2A/0x2B,
 # sniffer) and the emulation switches. Every other package depends on it.
 # Part of jotuera/immergas-magis-pro-combo-dd-modbus (MIT). Loaded by the main YAML through `packages:`.
+# File and id names start with dd_ so this repo can be combined with the T-/T+ and F1/F2 repos on one device.
 
 globals:
-  # v1.3.0: A31 (0x29 W 6102) as last written by the boiler - echoed back on READ like the physical panel
+  # ---- v2.0.0 migration: values saved by v1.x under the old ids (restore_value hashes the id).
+  # Read once on the first boot of v2.x and copied to the dd_ globals; removed in a later release.
+  - id: dd_migrated_v2
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
   - id: panel_a31_raw
+    type: int
+    restore_value: yes
+    initial_value: '0'
+  - id: ha_room_temp_raw
+    type: int
+    restore_value: yes
+    initial_value: '210'
+  - id: ha_room_humidity_raw
+    type: int
+    restore_value: yes
+    initial_value: '50'
+  - id: ha_room_temp_2_raw
+    type: int
+    restore_value: yes
+    initial_value: '210'
+  - id: ha_room_temp_3_raw
+    type: int
+    restore_value: yes
+    initial_value: '210'
+  - id: ha_room_humidity_2_raw
+    type: int
+    restore_value: yes
+    initial_value: '50'
+  - id: ha_room_humidity_3_raw
+    type: int
+    restore_value: yes
+    initial_value: '50'
+  - id: cwu_setpoint_raw
+    type: int
+    restore_value: yes
+    initial_value: '500'
+  - id: zone1_setpoint_raw
+    type: int
+    restore_value: yes
+    initial_value: '210'
+  - id: zone1_offset_raw
+    type: int
+    restore_value: yes
+    initial_value: '20'
+  - id: zone2_setpoint_raw
+    type: int
+    restore_value: yes
+    initial_value: '210'
+  - id: zone3_setpoint_raw
+    type: int
+    restore_value: yes
+    initial_value: '210'
+  - id: zone2_offset_raw
+    type: int
+    restore_value: yes
+    initial_value: '20'
+  - id: zone3_offset_raw
+    type: int
+    restore_value: yes
+    initial_value: '20'
+  - id: operating_mode_raw
+    type: int
+    restore_value: yes
+    initial_value: '3'
+  - id: operating_mode_target_raw
+    type: int
+    restore_value: yes
+    initial_value: '3'
+  - id: dominus_comfort_heat_raw
+    type: int
+    restore_value: yes
+    initial_value: '240'
+  - id: dominus_eco_heat_raw
+    type: int
+    restore_value: yes
+    initial_value: '200'
+  - id: dominus_comfort_cool_raw
+    type: int
+    restore_value: yes
+    initial_value: '230'
+  - id: dominus_eco_cool_raw
+    type: int
+    restore_value: yes
+    initial_value: '250'
+  - id: dominus_humidity_raw
+    type: int
+    restore_value: yes
+    initial_value: '51'
+  - id: dominus_set_flow_raw
+    type: int
+    restore_value: yes
+    initial_value: '300'
+  - id: dominus_comfort_heat_z2_raw
+    type: int
+    restore_value: yes
+    initial_value: '240'
+  - id: dominus_eco_heat_z2_raw
+    type: int
+    restore_value: yes
+    initial_value: '200'
+  - id: dominus_comfort_cool_z2_raw
+    type: int
+    restore_value: yes
+    initial_value: '230'
+  - id: dominus_eco_cool_z2_raw
+    type: int
+    restore_value: yes
+    initial_value: '250'
+  - id: dominus_humidity_z2_raw
+    type: int
+    restore_value: yes
+    initial_value: '51'
+  - id: dominus_set_flow_z2_raw
+    type: int
+    restore_value: yes
+    initial_value: '300'
+  - id: dominus_comfort_heat_z3_raw
+    type: int
+    restore_value: yes
+    initial_value: '240'
+  - id: dominus_eco_heat_z3_raw
+    type: int
+    restore_value: yes
+    initial_value: '200'
+  - id: dominus_comfort_cool_z3_raw
+    type: int
+    restore_value: yes
+    initial_value: '230'
+  - id: dominus_eco_cool_z3_raw
+    type: int
+    restore_value: yes
+    initial_value: '250'
+  - id: dominus_humidity_z3_raw
+    type: int
+    restore_value: yes
+    initial_value: '51'
+  - id: dominus_set_flow_z3_raw
+    type: int
+    restore_value: yes
+    initial_value: '300'
+  # v1.3.0: A31 (0x29 W 6102) as last written by the boiler - echoed back on READ like the physical panel
+  - id: dd_panel_a31_raw
     type: int
     restore_value: yes
     initial_value: '0'
@@ -56,180 +199,180 @@ globals:
     type: int
     restore_value: no
     initial_value: '0'
-  - id: ha_room_temp_raw
+  - id: dd_ha_room_temp_raw
     type: int
     restore_value: yes
     initial_value: '210'
 
-  - id: ha_room_humidity_raw
+  - id: dd_ha_room_humidity_raw
     type: int
     restore_value: yes
     initial_value: '50'
 
   # v94: temp/humidity for Zone 2 and 3 (from HA, for emulating panels 0x2A/0x2B). Placeholders.
-  - id: ha_room_temp_2_raw
+  - id: dd_ha_room_temp_2_raw
     type: int
     restore_value: yes
     initial_value: '210'
-  - id: ha_room_temp_3_raw
+  - id: dd_ha_room_temp_3_raw
     type: int
     restore_value: yes
     initial_value: '210'
-  - id: ha_room_humidity_2_raw
+  - id: dd_ha_room_humidity_2_raw
     type: int
     restore_value: yes
     initial_value: '50'
-  - id: ha_room_humidity_3_raw
+  - id: dd_ha_room_humidity_3_raw
     type: int
     restore_value: yes
     initial_value: '50'
 
   # v63: buffers for 3 sources + index of the selected source (1-3). ha_room_*_raw = selected (read by emu29).
-  - id: ha_temp_raw_1
+  - id: dd_ha_temp_raw_1
     type: int
     restore_value: no
     initial_value: '210'
-  - id: ha_temp_raw_2
+  - id: dd_ha_temp_raw_2
     type: int
     restore_value: no
     initial_value: '210'
-  - id: ha_temp_raw_3
+  - id: dd_ha_temp_raw_3
     type: int
     restore_value: no
     initial_value: '210'
-  - id: ha_temp_raw_4
+  - id: dd_ha_temp_raw_4
     type: int
     restore_value: no
     initial_value: '210'
-  - id: ha_temp_raw_5
+  - id: dd_ha_temp_raw_5
     type: int
     restore_value: no
     initial_value: '210'
-  - id: ha_hum_raw_1
+  - id: dd_ha_hum_raw_1
     type: int
     restore_value: no
     initial_value: '50'
-  - id: ha_hum_raw_2
+  - id: dd_ha_hum_raw_2
     type: int
     restore_value: no
     initial_value: '50'
-  - id: ha_hum_raw_3
+  - id: dd_ha_hum_raw_3
     type: int
     restore_value: no
     initial_value: '50'
-  - id: ha_hum_raw_4
+  - id: dd_ha_hum_raw_4
     type: int
     restore_value: no
     initial_value: '50'
-  - id: ha_hum_raw_5
+  - id: dd_ha_hum_raw_5
     type: int
     restore_value: no
     initial_value: '50'
   # v100: restore_value: no -> after reboot returns to source 4 (Upper floor), consistent with the select's initial_option.
-  - id: temp_src_idx
+  - id: dd_temp_src_idx
     type: int
     restore_value: no
     initial_value: '4'
-  - id: hum_src_idx
+  - id: dd_hum_src_idx
     type: int
     restore_value: no
     initial_value: '4'
 
   # v99: buffers for 4 temp/humidity sources of Zone 2 and 3 + active source index (1-4, restore:no -> after
   # reboot source 1). ha_room_temp/humidity_2/3_raw = selected (read by emu_zone_value for 0x2A/0x2B).
-  - id: ha_temp_raw_z2_1
+  - id: dd_ha_temp_raw_z2_1
     type: int
     restore_value: no
     initial_value: '210'
-  - id: ha_temp_raw_z2_2
+  - id: dd_ha_temp_raw_z2_2
     type: int
     restore_value: no
     initial_value: '210'
-  - id: ha_temp_raw_z2_3
+  - id: dd_ha_temp_raw_z2_3
     type: int
     restore_value: no
     initial_value: '210'
-  - id: ha_temp_raw_z2_4
+  - id: dd_ha_temp_raw_z2_4
     type: int
     restore_value: no
     initial_value: '210'
-  - id: ha_hum_raw_z2_1
+  - id: dd_ha_hum_raw_z2_1
     type: int
     restore_value: no
     initial_value: '50'
-  - id: ha_hum_raw_z2_2
+  - id: dd_ha_hum_raw_z2_2
     type: int
     restore_value: no
     initial_value: '50'
-  - id: ha_hum_raw_z2_3
+  - id: dd_ha_hum_raw_z2_3
     type: int
     restore_value: no
     initial_value: '50'
-  - id: ha_hum_raw_z2_4
+  - id: dd_ha_hum_raw_z2_4
     type: int
     restore_value: no
     initial_value: '50'
-  - id: ha_temp_raw_z3_1
+  - id: dd_ha_temp_raw_z3_1
     type: int
     restore_value: no
     initial_value: '210'
-  - id: ha_temp_raw_z3_2
+  - id: dd_ha_temp_raw_z3_2
     type: int
     restore_value: no
     initial_value: '210'
-  - id: ha_temp_raw_z3_3
+  - id: dd_ha_temp_raw_z3_3
     type: int
     restore_value: no
     initial_value: '210'
-  - id: ha_temp_raw_z3_4
+  - id: dd_ha_temp_raw_z3_4
     type: int
     restore_value: no
     initial_value: '210'
-  - id: ha_hum_raw_z3_1
+  - id: dd_ha_hum_raw_z3_1
     type: int
     restore_value: no
     initial_value: '50'
-  - id: ha_hum_raw_z3_2
+  - id: dd_ha_hum_raw_z3_2
     type: int
     restore_value: no
     initial_value: '50'
-  - id: ha_hum_raw_z3_3
+  - id: dd_ha_hum_raw_z3_3
     type: int
     restore_value: no
     initial_value: '50'
-  - id: ha_hum_raw_z3_4
+  - id: dd_ha_hum_raw_z3_4
     type: int
     restore_value: no
     initial_value: '50'
-  - id: ha_temp_raw_z2_5
+  - id: dd_ha_temp_raw_z2_5
     type: int
     restore_value: no
     initial_value: '210'
-  - id: ha_hum_raw_z2_5
+  - id: dd_ha_hum_raw_z2_5
     type: int
     restore_value: no
     initial_value: '50'
-  - id: ha_temp_raw_z3_5
+  - id: dd_ha_temp_raw_z3_5
     type: int
     restore_value: no
     initial_value: '210'
-  - id: ha_hum_raw_z3_5
+  - id: dd_ha_hum_raw_z3_5
     type: int
     restore_value: no
     initial_value: '50'
-  - id: temp_src_z2_idx
+  - id: dd_temp_src_z2_idx
     type: int
     restore_value: no
     initial_value: '1'
-  - id: hum_src_z2_idx
+  - id: dd_hum_src_z2_idx
     type: int
     restore_value: no
     initial_value: '1'
-  - id: temp_src_z3_idx
+  - id: dd_temp_src_z3_idx
     type: int
     restore_value: no
     initial_value: '1'
-  - id: hum_src_z3_idx
+  - id: dd_hum_src_z3_idx
     type: int
     restore_value: no
     initial_value: '1'
@@ -313,67 +456,67 @@ globals:
   # ------------------------------------------------------------
   # Main Zone 1 / DHW values
   # ------------------------------------------------------------
-  - id: cwu_setpoint_raw
+  - id: dd_cwu_setpoint_raw
     type: int
     restore_value: yes
     initial_value: '500'
 
-  - id: dhw_temp_raw
+  - id: dd_dhw_temp_raw
     type: int
     restore_value: no
     initial_value: '0'
 
-  - id: outside_temp_raw
+  - id: dd_outside_temp_raw
     type: int
     restore_value: no
     initial_value: '0'
 
-  - id: zone1_temp_raw
+  - id: dd_zone1_temp_raw
     type: int
     restore_value: no
     initial_value: '0'
 
-  - id: zone1_setpoint_raw
+  - id: dd_zone1_setpoint_raw
     type: int
     restore_value: yes
     initial_value: '210'
 
-  - id: zone1_offset_raw
+  - id: dd_zone1_offset_raw
     type: int
     restore_value: yes
     initial_value: '20'
 
   # v96: CH setpoint + offset for Zone 2 and 3 (placeholders - 0x2A/0x2B serving backend TBD).
-  - id: zone2_setpoint_raw
+  - id: dd_zone2_setpoint_raw
     type: int
     restore_value: yes
     initial_value: '210'
-  - id: zone3_setpoint_raw
+  - id: dd_zone3_setpoint_raw
     type: int
     restore_value: yes
     initial_value: '210'
-  - id: zone2_offset_raw
+  - id: dd_zone2_offset_raw
     type: int
     restore_value: yes
     initial_value: '20'
-  - id: zone3_offset_raw
+  - id: dd_zone3_offset_raw
     type: int
     restore_value: yes
     initial_value: '20'
 
-  - id: operating_mode_raw
+  - id: dd_operating_mode_raw
     type: int
     restore_value: yes
     initial_value: '3'
 
-  - id: operating_mode_target_raw
+  - id: dd_operating_mode_target_raw
     type: int
     restore_value: yes
     initial_value: '3'
 
-  # v57 MODE CONTROL: separates the requested mode (operating_mode_raw, returned on READ 2000)
+  # v57 MODE CONTROL: separates the requested mode (dd_operating_mode_raw, returned on READ 2000)
   # from the reported mode (what the boiler WRITES BACK on 2000 - display only).
-  - id: operating_mode_reported
+  - id: dd_operating_mode_reported
     type: int
     restore_value: no
     initial_value: '3'
@@ -381,104 +524,104 @@ globals:
   # ------------------------------------------------------------
   # Dominus / Zone 1 - "Manage Zone" screen
   # ------------------------------------------------------------
-  - id: dominus_comfort_heat_raw
+  - id: dd_dominus_comfort_heat_raw
     type: int
     restore_value: yes
     initial_value: '240'
 
-  - id: dominus_eco_heat_raw
+  - id: dd_dominus_eco_heat_raw
     type: int
     restore_value: yes
     initial_value: '200'
 
-  - id: dominus_comfort_cool_raw
+  - id: dd_dominus_comfort_cool_raw
     type: int
     restore_value: yes
     initial_value: '230'
 
-  - id: dominus_eco_cool_raw
+  - id: dd_dominus_eco_cool_raw
     type: int
     restore_value: yes
     initial_value: '250'
 
-  - id: dominus_humidity_raw
+  - id: dd_dominus_humidity_raw
     type: int
     restore_value: yes
     initial_value: '51'
 
-  - id: dominus_set_flow_raw
+  - id: dd_dominus_set_flow_raw
     type: int
     restore_value: yes
     initial_value: '300'
 
   # v102: "Manage Zone" settings for Zone 2 (0x2A) and 3 (0x2B) - served per-address in emu_zone_value.
-  - id: dominus_comfort_heat_z2_raw
+  - id: dd_dominus_comfort_heat_z2_raw
     type: int
     restore_value: yes
     initial_value: '240'
 
-  - id: dominus_eco_heat_z2_raw
+  - id: dd_dominus_eco_heat_z2_raw
     type: int
     restore_value: yes
     initial_value: '200'
 
-  - id: dominus_comfort_cool_z2_raw
+  - id: dd_dominus_comfort_cool_z2_raw
     type: int
     restore_value: yes
     initial_value: '230'
 
-  - id: dominus_eco_cool_z2_raw
+  - id: dd_dominus_eco_cool_z2_raw
     type: int
     restore_value: yes
     initial_value: '250'
 
-  - id: dominus_humidity_z2_raw
+  - id: dd_dominus_humidity_z2_raw
     type: int
     restore_value: yes
     initial_value: '51'
 
-  - id: dominus_set_flow_z2_raw
+  - id: dd_dominus_set_flow_z2_raw
     type: int
     restore_value: yes
     initial_value: '300'
 
-  - id: dominus_comfort_heat_z3_raw
+  - id: dd_dominus_comfort_heat_z3_raw
     type: int
     restore_value: yes
     initial_value: '240'
 
-  - id: dominus_eco_heat_z3_raw
+  - id: dd_dominus_eco_heat_z3_raw
     type: int
     restore_value: yes
     initial_value: '200'
 
-  - id: dominus_comfort_cool_z3_raw
+  - id: dd_dominus_comfort_cool_z3_raw
     type: int
     restore_value: yes
     initial_value: '230'
 
-  - id: dominus_eco_cool_z3_raw
+  - id: dd_dominus_eco_cool_z3_raw
     type: int
     restore_value: yes
     initial_value: '250'
 
-  - id: dominus_humidity_z3_raw
+  - id: dd_dominus_humidity_z3_raw
     type: int
     restore_value: yes
     initial_value: '51'
 
-  - id: dominus_set_flow_z3_raw
+  - id: dd_dominus_set_flow_z3_raw
     type: int
     restore_value: yes
     initial_value: '300'
 
   # v117 last-writer-wins for Zone 2/3 setpoints: last value seen on the bus (adopt only when it differs).
   # Zone 1, the Dominus settings, DHW and the mode use lww_guard.h instead.
-  - id: zone2_setpoint_last_bus
+  - id: dd_zone2_setpoint_last_bus
     type: int
     restore_value: no
     initial_value: '-32768'
-  - id: zone3_setpoint_last_bus
+  - id: dd_zone3_setpoint_last_bus
     type: int
     restore_value: no
     initial_value: '-32768'
@@ -486,68 +629,68 @@ globals:
   # ------------------------------------------------------------
   # Dodatkowe 0x29 - diagnostyczne/kandydaci
   # ------------------------------------------------------------
-  - id: pdu_29_2006_raw
+  - id: dd_pdu_29_2006_raw
     type: int
     restore_value: no
     initial_value: '0'
 
   # 2300/2302/2303 look like the Dominus/Zone controller time/date.
   # 2300 zostawiamy jako surowy licznik/scheduler, bez wymuszonej interpretacji.
-  - id: pdu_29_2300_raw
+  - id: dd_pdu_29_2300_raw
     type: int
     restore_value: no
     initial_value: '0'
 
-  - id: pdu_29_2302_raw
+  - id: dd_pdu_29_2302_raw
     type: int
     restore_value: no
     initial_value: '0'
 
-  - id: pdu_29_2303_raw
+  - id: dd_pdu_29_2303_raw
     type: int
     restore_value: no
     initial_value: '0'
 
-  - id: pdu_29_2293_raw
+  - id: dd_pdu_29_2293_raw
     type: int
     restore_value: no
     initial_value: '0'
 
-  - id: pdu_29_3011_raw
+  - id: dd_pdu_29_3011_raw
     type: int
     restore_value: no
     initial_value: '0'
 
-  - id: pdu_29_3012_raw
+  - id: dd_pdu_29_3012_raw
     type: int
     restore_value: no
     initial_value: '0'
 
-  - id: pdu_29_3013_raw
+  - id: dd_pdu_29_3013_raw
     type: int
     restore_value: no
     initial_value: '0'
 
-  - id: pdu_29_3014_raw
+  - id: dd_pdu_29_3014_raw
     type: int
     restore_value: no
     initial_value: '0'
 
-  - id: pdu_29_3031_raw
+  - id: dd_pdu_29_3031_raw
     type: int
     restore_value: no
     initial_value: '0'
 
-  - id: pdu_29_3042_raw
+  - id: dd_pdu_29_3042_raw
     type: int
     restore_value: no
     initial_value: '0'
   # v92: panel firmware version for Zone 2/3 (0x2A/0x2B reg 3042) - placeholders (no data without zones 2/3).
-  - id: pdu_2a_version_raw
+  - id: dd_pdu_2a_version_raw
     type: int
     restore_value: no
     initial_value: '0'
-  - id: pdu_2b_version_raw
+  - id: dd_pdu_2b_version_raw
     type: int
     restore_value: no
     initial_value: '0'
@@ -605,8 +748,8 @@ switch:
   # v68: "Discovery of new PDUs" removed - diagnostics belong to the sniffer (immergas-dd-sniffer v47).
   # v68: "Active commands" removed - old active write disabled since v57 (slave model).
   - platform: template
-    name: "${n_enable_replies_switch}"
-    id: enable_replies_switch
+    name: "${n_dd_enable_replies_switch}"
+    id: dd_enable_replies_switch
     icon: mdi:lan-connect
     entity_category: diagnostic
     restore_mode: RESTORE_DEFAULT_ON
@@ -709,7 +852,7 @@ interval:
             id(dd_sniff_reset_req) = false;
             id(dd_sniff_regs) = 0;
             id(dd_sniff_changes) = 0;
-            id(sniff_last_change).publish_state("${t_sniff_reset}");
+            id(dd_sniff_last_change).publish_state("${t_dd_sniff_reset}");
             ESP_LOGI("sniff", "RESET sniffer map");
           }
 
@@ -879,66 +1022,66 @@ interval:
           // (06:00 -> 6*256 = 1536). Serwowane identycznie dla 0x33 i 0x29 z tych encji.
           auto chrono_reg_value = [&](uint16_t reg) -> int {
             switch (reg) {
-              case 2310: return id(dt_cal1_f1_on).hour * 256 + id(dt_cal1_f1_on).minute;
-              case 2311: return id(dt_cal1_f1_off).hour * 256 + id(dt_cal1_f1_off).minute;
-              case 2312: return id(dt_cal1_f2_on).hour * 256 + id(dt_cal1_f2_on).minute;
-              case 2313: return id(dt_cal1_f2_off).hour * 256 + id(dt_cal1_f2_off).minute;
-              case 2314: return id(dt_cal1_f3_on).hour * 256 + id(dt_cal1_f3_on).minute;
-              case 2315: return id(dt_cal1_f3_off).hour * 256 + id(dt_cal1_f3_off).minute;
-              case 2316: return id(dt_cal1_f4_on).hour * 256 + id(dt_cal1_f4_on).minute;
-              case 2317: return id(dt_cal1_f4_off).hour * 256 + id(dt_cal1_f4_off).minute;
-              case 2320: return id(dt_cal2_f1_on).hour * 256 + id(dt_cal2_f1_on).minute;
-              case 2321: return id(dt_cal2_f1_off).hour * 256 + id(dt_cal2_f1_off).minute;
-              case 2322: return id(dt_cal2_f2_on).hour * 256 + id(dt_cal2_f2_on).minute;
-              case 2323: return id(dt_cal2_f2_off).hour * 256 + id(dt_cal2_f2_off).minute;
-              case 2324: return id(dt_cal2_f3_on).hour * 256 + id(dt_cal2_f3_on).minute;
-              case 2325: return id(dt_cal2_f3_off).hour * 256 + id(dt_cal2_f3_off).minute;
-              case 2326: return id(dt_cal2_f4_on).hour * 256 + id(dt_cal2_f4_on).minute;
-              case 2327: return id(dt_cal2_f4_off).hour * 256 + id(dt_cal2_f4_off).minute;
-              case 2330: return id(dt_cal3_f1_on).hour * 256 + id(dt_cal3_f1_on).minute;
-              case 2331: return id(dt_cal3_f1_off).hour * 256 + id(dt_cal3_f1_off).minute;
-              case 2332: return id(dt_cal3_f2_on).hour * 256 + id(dt_cal3_f2_on).minute;
-              case 2333: return id(dt_cal3_f2_off).hour * 256 + id(dt_cal3_f2_off).minute;
-              case 2334: return id(dt_cal3_f3_on).hour * 256 + id(dt_cal3_f3_on).minute;
-              case 2335: return id(dt_cal3_f3_off).hour * 256 + id(dt_cal3_f3_off).minute;
-              case 2336: return id(dt_cal3_f4_on).hour * 256 + id(dt_cal3_f4_on).minute;
-              case 2337: return id(dt_cal3_f4_off).hour * 256 + id(dt_cal3_f4_off).minute;
-              case 2340: return id(dt_cal4_f1_on).hour * 256 + id(dt_cal4_f1_on).minute;
-              case 2341: return id(dt_cal4_f1_off).hour * 256 + id(dt_cal4_f1_off).minute;
-              case 2342: return id(dt_cal4_f2_on).hour * 256 + id(dt_cal4_f2_on).minute;
-              case 2343: return id(dt_cal4_f2_off).hour * 256 + id(dt_cal4_f2_off).minute;
-              case 2344: return id(dt_cal4_f3_on).hour * 256 + id(dt_cal4_f3_on).minute;
-              case 2345: return id(dt_cal4_f3_off).hour * 256 + id(dt_cal4_f3_off).minute;
-              case 2346: return id(dt_cal4_f4_on).hour * 256 + id(dt_cal4_f4_on).minute;
-              case 2347: return id(dt_cal4_f4_off).hour * 256 + id(dt_cal4_f4_off).minute;
-              case 2410: return (int) id(sel_weekday_1).active_index().value_or(0) + 1;
-              case 2411: return (int) id(sel_weekday_2).active_index().value_or(0) + 1;
-              case 2412: return (int) id(sel_weekday_3).active_index().value_or(0) + 1;
-              case 2413: return (int) id(sel_weekday_4).active_index().value_or(0) + 1;
-              case 2414: return (int) id(sel_weekday_5).active_index().value_or(0) + 1;
-              case 2415: return (int) id(sel_weekday_6).active_index().value_or(0) + 1;
-              case 2416: return (int) id(sel_weekday_7).active_index().value_or(0) + 1;
-              case 2420: return (int) id(sel_weekday_z2_1).active_index().value_or(0) + 1;
-              case 2421: return (int) id(sel_weekday_z2_2).active_index().value_or(0) + 1;
-              case 2422: return (int) id(sel_weekday_z2_3).active_index().value_or(0) + 1;
-              case 2423: return (int) id(sel_weekday_z2_4).active_index().value_or(0) + 1;
-              case 2424: return (int) id(sel_weekday_z2_5).active_index().value_or(0) + 1;
-              case 2425: return (int) id(sel_weekday_z2_6).active_index().value_or(0) + 1;
-              case 2426: return (int) id(sel_weekday_z2_7).active_index().value_or(0) + 1;
-              case 2430: return (int) id(sel_weekday_z3_1).active_index().value_or(0) + 1;
-              case 2431: return (int) id(sel_weekday_z3_2).active_index().value_or(0) + 1;
-              case 2432: return (int) id(sel_weekday_z3_3).active_index().value_or(0) + 1;
-              case 2433: return (int) id(sel_weekday_z3_4).active_index().value_or(0) + 1;
-              case 2434: return (int) id(sel_weekday_z3_5).active_index().value_or(0) + 1;
-              case 2435: return (int) id(sel_weekday_z3_6).active_index().value_or(0) + 1;
-              case 2436: return (int) id(sel_weekday_z3_7).active_index().value_or(0) + 1;
-              case 2490: return (int) id(sel_dhw_weekday_1).active_index().value_or(0) + 1;
-              case 2491: return (int) id(sel_dhw_weekday_2).active_index().value_or(0) + 1;
-              case 2492: return (int) id(sel_dhw_weekday_3).active_index().value_or(0) + 1;
-              case 2493: return (int) id(sel_dhw_weekday_4).active_index().value_or(0) + 1;
-              case 2494: return (int) id(sel_dhw_weekday_5).active_index().value_or(0) + 1;
-              case 2495: return (int) id(sel_dhw_weekday_6).active_index().value_or(0) + 1;
-              case 2496: return (int) id(sel_dhw_weekday_7).active_index().value_or(0) + 1;
+              case 2310: return id(dd_dt_cal1_f1_on).hour * 256 + id(dd_dt_cal1_f1_on).minute;
+              case 2311: return id(dd_dt_cal1_f1_off).hour * 256 + id(dd_dt_cal1_f1_off).minute;
+              case 2312: return id(dd_dt_cal1_f2_on).hour * 256 + id(dd_dt_cal1_f2_on).minute;
+              case 2313: return id(dd_dt_cal1_f2_off).hour * 256 + id(dd_dt_cal1_f2_off).minute;
+              case 2314: return id(dd_dt_cal1_f3_on).hour * 256 + id(dd_dt_cal1_f3_on).minute;
+              case 2315: return id(dd_dt_cal1_f3_off).hour * 256 + id(dd_dt_cal1_f3_off).minute;
+              case 2316: return id(dd_dt_cal1_f4_on).hour * 256 + id(dd_dt_cal1_f4_on).minute;
+              case 2317: return id(dd_dt_cal1_f4_off).hour * 256 + id(dd_dt_cal1_f4_off).minute;
+              case 2320: return id(dd_dt_cal2_f1_on).hour * 256 + id(dd_dt_cal2_f1_on).minute;
+              case 2321: return id(dd_dt_cal2_f1_off).hour * 256 + id(dd_dt_cal2_f1_off).minute;
+              case 2322: return id(dd_dt_cal2_f2_on).hour * 256 + id(dd_dt_cal2_f2_on).minute;
+              case 2323: return id(dd_dt_cal2_f2_off).hour * 256 + id(dd_dt_cal2_f2_off).minute;
+              case 2324: return id(dd_dt_cal2_f3_on).hour * 256 + id(dd_dt_cal2_f3_on).minute;
+              case 2325: return id(dd_dt_cal2_f3_off).hour * 256 + id(dd_dt_cal2_f3_off).minute;
+              case 2326: return id(dd_dt_cal2_f4_on).hour * 256 + id(dd_dt_cal2_f4_on).minute;
+              case 2327: return id(dd_dt_cal2_f4_off).hour * 256 + id(dd_dt_cal2_f4_off).minute;
+              case 2330: return id(dd_dt_cal3_f1_on).hour * 256 + id(dd_dt_cal3_f1_on).minute;
+              case 2331: return id(dd_dt_cal3_f1_off).hour * 256 + id(dd_dt_cal3_f1_off).minute;
+              case 2332: return id(dd_dt_cal3_f2_on).hour * 256 + id(dd_dt_cal3_f2_on).minute;
+              case 2333: return id(dd_dt_cal3_f2_off).hour * 256 + id(dd_dt_cal3_f2_off).minute;
+              case 2334: return id(dd_dt_cal3_f3_on).hour * 256 + id(dd_dt_cal3_f3_on).minute;
+              case 2335: return id(dd_dt_cal3_f3_off).hour * 256 + id(dd_dt_cal3_f3_off).minute;
+              case 2336: return id(dd_dt_cal3_f4_on).hour * 256 + id(dd_dt_cal3_f4_on).minute;
+              case 2337: return id(dd_dt_cal3_f4_off).hour * 256 + id(dd_dt_cal3_f4_off).minute;
+              case 2340: return id(dd_dt_cal4_f1_on).hour * 256 + id(dd_dt_cal4_f1_on).minute;
+              case 2341: return id(dd_dt_cal4_f1_off).hour * 256 + id(dd_dt_cal4_f1_off).minute;
+              case 2342: return id(dd_dt_cal4_f2_on).hour * 256 + id(dd_dt_cal4_f2_on).minute;
+              case 2343: return id(dd_dt_cal4_f2_off).hour * 256 + id(dd_dt_cal4_f2_off).minute;
+              case 2344: return id(dd_dt_cal4_f3_on).hour * 256 + id(dd_dt_cal4_f3_on).minute;
+              case 2345: return id(dd_dt_cal4_f3_off).hour * 256 + id(dd_dt_cal4_f3_off).minute;
+              case 2346: return id(dd_dt_cal4_f4_on).hour * 256 + id(dd_dt_cal4_f4_on).minute;
+              case 2347: return id(dd_dt_cal4_f4_off).hour * 256 + id(dd_dt_cal4_f4_off).minute;
+              case 2410: return (int) id(dd_sel_weekday_1).active_index().value_or(0) + 1;
+              case 2411: return (int) id(dd_sel_weekday_2).active_index().value_or(0) + 1;
+              case 2412: return (int) id(dd_sel_weekday_3).active_index().value_or(0) + 1;
+              case 2413: return (int) id(dd_sel_weekday_4).active_index().value_or(0) + 1;
+              case 2414: return (int) id(dd_sel_weekday_5).active_index().value_or(0) + 1;
+              case 2415: return (int) id(dd_sel_weekday_6).active_index().value_or(0) + 1;
+              case 2416: return (int) id(dd_sel_weekday_7).active_index().value_or(0) + 1;
+              case 2420: return (int) id(dd_sel_weekday_z2_1).active_index().value_or(0) + 1;
+              case 2421: return (int) id(dd_sel_weekday_z2_2).active_index().value_or(0) + 1;
+              case 2422: return (int) id(dd_sel_weekday_z2_3).active_index().value_or(0) + 1;
+              case 2423: return (int) id(dd_sel_weekday_z2_4).active_index().value_or(0) + 1;
+              case 2424: return (int) id(dd_sel_weekday_z2_5).active_index().value_or(0) + 1;
+              case 2425: return (int) id(dd_sel_weekday_z2_6).active_index().value_or(0) + 1;
+              case 2426: return (int) id(dd_sel_weekday_z2_7).active_index().value_or(0) + 1;
+              case 2430: return (int) id(dd_sel_weekday_z3_1).active_index().value_or(0) + 1;
+              case 2431: return (int) id(dd_sel_weekday_z3_2).active_index().value_or(0) + 1;
+              case 2432: return (int) id(dd_sel_weekday_z3_3).active_index().value_or(0) + 1;
+              case 2433: return (int) id(dd_sel_weekday_z3_4).active_index().value_or(0) + 1;
+              case 2434: return (int) id(dd_sel_weekday_z3_5).active_index().value_or(0) + 1;
+              case 2435: return (int) id(dd_sel_weekday_z3_6).active_index().value_or(0) + 1;
+              case 2436: return (int) id(dd_sel_weekday_z3_7).active_index().value_or(0) + 1;
+              case 2490: return (int) id(dd_sel_dhw_weekday_1).active_index().value_or(0) + 1;
+              case 2491: return (int) id(dd_sel_dhw_weekday_2).active_index().value_or(0) + 1;
+              case 2492: return (int) id(dd_sel_dhw_weekday_3).active_index().value_or(0) + 1;
+              case 2493: return (int) id(dd_sel_dhw_weekday_4).active_index().value_or(0) + 1;
+              case 2494: return (int) id(dd_sel_dhw_weekday_5).active_index().value_or(0) + 1;
+              case 2495: return (int) id(dd_sel_dhw_weekday_6).active_index().value_or(0) + 1;
+              case 2496: return (int) id(dd_sel_dhw_weekday_7).active_index().value_or(0) + 1;
               default: return 0;
             }
           };
@@ -947,41 +1090,41 @@ interval:
             // Safe default values based on the real 0x29/Zone 1 map.
             // v21's goal is the presence of panel 0x29, not full control.
             switch (reg) {
-              case REG_MODE: return id(operating_mode_raw);
+              case REG_MODE: return id(dd_operating_mode_raw);
               case 2001: return 8;
               case 2002: return 0;
-              case 2005: return id(ha_room_temp_raw);       // v62: temp pomieszczenia z HA
-              case 2006: return id(ha_room_humidity_raw);   // v62: humidity from HA
+              case 2005: return id(dd_ha_room_temp_raw);       // v62: temp pomieszczenia z HA
+              case 2006: return id(dd_ha_room_humidity_raw);   // v62: humidity from HA
               case REG_ZONE1_STATUS: return 4;
-              case REG_ZONE1_TEMP_OLD: return id(ha_room_temp_raw);  // v62: temp z HA (kopia 2011)
+              case REG_ZONE1_TEMP_OLD: return id(dd_ha_room_temp_raw);  // v62: temp z HA (kopia 2011)
               case 2012: return 0;
-              case REG_ZONE1_SETPOINT: return id(zone1_setpoint_raw);
+              case REG_ZONE1_SETPOINT: return id(dd_zone1_setpoint_raw);
               case REG_ZONE1_MAX: return 300;
-              case REG_ZONE1_OFFSET: return id(zone1_offset_raw);
+              case REG_ZONE1_OFFSET: return id(dd_zone1_offset_raw);
               case 2090: return 4;
-              case REG_DHW_SETPOINT: return id(cwu_setpoint_raw);
+              case REG_DHW_SETPOINT: return id(dd_cwu_setpoint_raw);
               case 2100: return 0;
               case 2101: return 0;
               case 2102: return 0;
               case 2103: return 0;
 
-              case REG_COMFORT_HEAT: return id(dominus_comfort_heat_raw);
-              case REG_ECO_HEAT: return id(dominus_eco_heat_raw);
-              case REG_COMFORT_COOL: return id(dominus_comfort_cool_raw);
-              case REG_ECO_COOL_COPY: return id(dominus_eco_cool_raw);
-              case REG_HUMIDITY: return id(dominus_humidity_raw);
-              case REG_SET_FLOW: return id(dominus_set_flow_raw);
+              case REG_COMFORT_HEAT: return id(dd_dominus_comfort_heat_raw);
+              case REG_ECO_HEAT: return id(dd_dominus_eco_heat_raw);
+              case REG_COMFORT_COOL: return id(dd_dominus_comfort_cool_raw);
+              case REG_ECO_COOL_COPY: return id(dd_dominus_eco_cool_raw);
+              case REG_HUMIDITY: return id(dd_dominus_humidity_raw);
+              case REG_SET_FLOW: return id(dd_dominus_set_flow_raw);
               case REG_ZONE1_MAX_COPY: return 300;
-              case REG_ZONE1_OFFSET_COPY: return id(zone1_offset_raw);
+              case REG_ZONE1_OFFSET_COPY: return id(dd_zone1_offset_raw);
 
-              case 2290: return id(cwu_setpoint_raw);
-              case REG_DHW_SETPOINT_COPY_1: return id(cwu_setpoint_raw);
-              case REG_DHW_SETPOINT_COPY_2: return id(cwu_setpoint_raw);
-              case REG_DHW_TEMP_COPY_2293: return id(dhw_temp_raw) > 0 ? id(dhw_temp_raw) : 482;
-              case 2294: return (int) id(sel_programy_czasowe).active_index().value_or(0);  // v1.3.0
-              case 2300: return id(pdu_29_2300_raw) != 0 ? id(pdu_29_2300_raw) : 14101;
-              case 2302: return id(pdu_29_2302_raw) != 0 ? id(pdu_29_2302_raw) : 5638;
-              case 2303: return id(pdu_29_2303_raw) > 0 ? id(pdu_29_2303_raw) : 2026;
+              case 2290: return id(dd_cwu_setpoint_raw);
+              case REG_DHW_SETPOINT_COPY_1: return id(dd_cwu_setpoint_raw);
+              case REG_DHW_SETPOINT_COPY_2: return id(dd_cwu_setpoint_raw);
+              case REG_DHW_TEMP_COPY_2293: return id(dd_dhw_temp_raw) > 0 ? id(dd_dhw_temp_raw) : 482;
+              case 2294: return (int) id(dd_sel_programy_czasowe).active_index().value_or(0);  // v1.3.0
+              case 2300: return id(dd_pdu_29_2300_raw) != 0 ? id(dd_pdu_29_2300_raw) : 14101;
+              case 2302: return id(dd_pdu_29_2302_raw) != 0 ? id(dd_pdu_29_2302_raw) : 5638;
+              case 2303: return id(dd_pdu_29_2303_raw) > 0 ? id(dd_pdu_29_2303_raw) : 2026;
 
               case 2310: case 2311: case 2312: case 2313:
               case 2314: case 2315: case 2316: case 2317:
@@ -1003,22 +1146,22 @@ interval:
               case 2494: case 2495: case 2496:
                 return chrono_reg_value(reg);
 
-              case REG_ECO_COOL: return id(dominus_eco_cool_raw);
-              case REG_OUTSIDE_TEMP: return id(outside_temp_raw) > 0 ? id(outside_temp_raw) : 167;
+              case REG_ECO_COOL: return id(dd_dominus_eco_cool_raw);
+              case REG_OUTSIDE_TEMP: return id(dd_outside_temp_raw) > 0 ? id(dd_outside_temp_raw) : 167;
               case 3003: return 0;
-              case REG_ZONE1_TEMP_COPY: return id(ha_room_temp_raw);  // v62: temp z HA (kopia 3009)
-              case 3010: return id(ha_room_humidity_raw);             // v62: humidity from HA (copy of 3010)
-              case 3011: return id(pdu_29_3011_raw) != 0 ? id(pdu_29_3011_raw) : 349;
-              case 3012: return id(pdu_29_3012_raw) != 0 ? id(pdu_29_3012_raw) : 349;
-              case 3013: return id(pdu_29_3013_raw) != 0 ? id(pdu_29_3013_raw) : 345;
-              case 3014: return id(pdu_29_3014_raw) != 0 ? id(pdu_29_3014_raw) : 391;
-              case REG_DHW_SETPOINT_COPY_3: return id(cwu_setpoint_raw);
-              case REG_DHW_TEMP: return id(dhw_temp_raw) > 0 ? id(dhw_temp_raw) : 482;
+              case REG_ZONE1_TEMP_COPY: return id(dd_ha_room_temp_raw);  // v62: temp z HA (kopia 3009)
+              case 3010: return id(dd_ha_room_humidity_raw);             // v62: humidity from HA (copy of 3010)
+              case 3011: return id(dd_pdu_29_3011_raw) != 0 ? id(dd_pdu_29_3011_raw) : 349;
+              case 3012: return id(dd_pdu_29_3012_raw) != 0 ? id(dd_pdu_29_3012_raw) : 349;
+              case 3013: return id(dd_pdu_29_3013_raw) != 0 ? id(dd_pdu_29_3013_raw) : 345;
+              case 3014: return id(dd_pdu_29_3014_raw) != 0 ? id(dd_pdu_29_3014_raw) : 391;
+              case REG_DHW_SETPOINT_COPY_3: return id(dd_cwu_setpoint_raw);
+              case REG_DHW_TEMP: return id(dd_dhw_temp_raw) > 0 ? id(dd_dhw_temp_raw) : 482;
               case 3031: return 600;
               case 3042: return 201;
-              case 6102: return id(panel_a31_raw);                                          // v1.3.0: echo A31
-              case 6105: return (int) id(sel_modulacja_sonda).active_index().value_or(0);  // v1.3.0
-              case 6107: return id(sw_punkt_rosy).state ? 1 : 0;                           // v1.3.0
+              case 6102: return id(dd_panel_a31_raw);                                          // v1.3.0: echo A31
+              case 6105: return (int) id(dd_sel_modulacja_sonda).active_index().value_or(0);  // v1.3.0
+              case 6107: return id(dd_sw_punkt_rosy).state ? 1 : 0;                           // v1.3.0
               case 6150: return 1;
               default: return 0;
             }
@@ -1027,30 +1170,30 @@ interval:
           auto emu33_value = [&](uint16_t reg) -> int {
             // Safe Dominus 0x33 map from real logs.
             switch (reg) {
-              case REG_MODE: return id(operating_mode_raw);
+              case REG_MODE: return id(dd_operating_mode_raw);
               case 2001: return 8;
               case 2002: return 0;
               case REG_ZONE1_STATUS: return 4;
               case REG_ZONE1_TEMP_OLD: return 32767;
               case 2012: return 0;
-              case REG_ZONE1_SETPOINT: return id(zone1_setpoint_raw);
+              case REG_ZONE1_SETPOINT: return id(dd_zone1_setpoint_raw);
               case REG_ZONE1_MAX: return 300;
-              case REG_ZONE1_OFFSET: return id(zone1_offset_raw);
-              case REG_DHW_SETPOINT: return id(cwu_setpoint_raw);
+              case REG_ZONE1_OFFSET: return id(dd_zone1_offset_raw);
+              case REG_DHW_SETPOINT: return id(dd_cwu_setpoint_raw);
               case 2100: return 0;
               case 2101: return 0;
 
-              case REG_COMFORT_HEAT: return id(dominus_comfort_heat_raw);
-              case REG_ECO_HEAT: return id(dominus_eco_heat_raw);
-              case REG_COMFORT_COOL: return id(dominus_comfort_cool_raw);
-              case REG_ECO_COOL_COPY: return id(dominus_eco_cool_raw);
-              case REG_HUMIDITY: return id(dominus_humidity_raw);
-              case REG_SET_FLOW: return id(dominus_set_flow_raw);
+              case REG_COMFORT_HEAT: return id(dd_dominus_comfort_heat_raw);
+              case REG_ECO_HEAT: return id(dd_dominus_eco_heat_raw);
+              case REG_COMFORT_COOL: return id(dd_dominus_comfort_cool_raw);
+              case REG_ECO_COOL_COPY: return id(dd_dominus_eco_cool_raw);
+              case REG_HUMIDITY: return id(dd_dominus_humidity_raw);
+              case REG_SET_FLOW: return id(dd_dominus_set_flow_raw);
               // v61 anti-flicker: the boiler reads 2214 count5 (2214..2218), and 2218 is a COPY of the offset
               // of Zone 1 (a real Dominus returns the same as 2017 there, e.g. -10). Previously 0 ->
               // niespojnosc 2017 vs 2218 = "miganie o jeden". Teraz spojnie z 2017.
-              case REG_ZONE1_MAX_COPY: return id(zone1_offset_raw);
-              case REG_ZONE1_OFFSET_COPY: return id(zone1_offset_raw);
+              case REG_ZONE1_MAX_COPY: return id(dd_zone1_offset_raw);
+              case REG_ZONE1_OFFSET_COPY: return id(dd_zone1_offset_raw);
 
               case 2310: case 2311: case 2312: case 2313:
               case 2314: case 2315: case 2316: case 2317:
@@ -1070,8 +1213,8 @@ interval:
               case 2494: case 2495: case 2496:
                 return chrono_reg_value(reg);
 
-              case REG_OUTSIDE_TEMP: return id(outside_temp_raw) > 0 ? id(outside_temp_raw) : 207;
-              case REG_DHW_TEMP: return id(dhw_temp_raw) > 0 ? id(dhw_temp_raw) : 454;
+              case REG_OUTSIDE_TEMP: return id(dd_outside_temp_raw) > 0 ? id(dd_outside_temp_raw) : 207;
+              case REG_DHW_TEMP: return id(dd_dhw_temp_raw) > 0 ? id(dd_dhw_temp_raw) : 454;
               case 3031: return 60;
               case 4199: return 1;
               default: return 0;
@@ -1089,12 +1232,12 @@ interval:
               case REG_ZONE1_SETPOINT: return sp_raw;                                          // 2015
               case REG_ZONE1_OFFSET: case REG_ZONE1_OFFSET_COPY: return off_raw;               // 2017/2219
               // v102: per-zone "Manage Zone" settings (Set Comfort/Eco Heat/Cool, humidity U08/U18, Set Flow)
-              case REG_COMFORT_HEAT: return z2 ? id(dominus_comfort_heat_z2_raw) : id(dominus_comfort_heat_z3_raw);
-              case REG_ECO_HEAT:     return z2 ? id(dominus_eco_heat_z2_raw)     : id(dominus_eco_heat_z3_raw);
-              case REG_COMFORT_COOL: return z2 ? id(dominus_comfort_cool_z2_raw) : id(dominus_comfort_cool_z3_raw);
-              case REG_ECO_COOL_COPY: return z2 ? id(dominus_eco_cool_z2_raw)    : id(dominus_eco_cool_z3_raw);
-              case REG_HUMIDITY:     return z2 ? id(dominus_humidity_z2_raw)     : id(dominus_humidity_z3_raw);
-              case REG_SET_FLOW:     return z2 ? id(dominus_set_flow_z2_raw)     : id(dominus_set_flow_z3_raw);
+              case REG_COMFORT_HEAT: return z2 ? id(dd_dominus_comfort_heat_z2_raw) : id(dd_dominus_comfort_heat_z3_raw);
+              case REG_ECO_HEAT:     return z2 ? id(dd_dominus_eco_heat_z2_raw)     : id(dd_dominus_eco_heat_z3_raw);
+              case REG_COMFORT_COOL: return z2 ? id(dd_dominus_comfort_cool_z2_raw) : id(dd_dominus_comfort_cool_z3_raw);
+              case REG_ECO_COOL_COPY: return z2 ? id(dd_dominus_eco_cool_z2_raw)    : id(dd_dominus_eco_cool_z3_raw);
+              case REG_HUMIDITY:     return z2 ? id(dd_dominus_humidity_z2_raw)     : id(dd_dominus_humidity_z3_raw);
+              case REG_SET_FLOW:     return z2 ? id(dd_dominus_set_flow_z2_raw)     : id(dd_dominus_set_flow_z3_raw);
               default: return emu29_value(reg);
             }
           };
@@ -1136,8 +1279,8 @@ interval:
               // req 29 03 07 D5 00 02 D2 AF -> resp 29 03 04 00 E9 00 3C 83 D4
               // czyli 2005=233 (23.3°C), 2006=60 (%).
               if (start == 2005 && count == 2) {
-                if (reg == 2005) value = id(ha_room_temp_raw);      // v62: temp pomieszczenia z HA
-                if (reg == 2006) value = id(ha_room_humidity_raw);  // v62: humidity from HA
+                if (reg == 2005) value = id(dd_ha_room_temp_raw);      // v62: temp pomieszczenia z HA
+                if (reg == 2006) value = id(dd_ha_room_humidity_raw);  // v62: humidity from HA
               }
               uint16_t uvalue = (uint16_t) value;
               resp.push_back((uvalue >> 8) & 0xFF);
@@ -1482,33 +1625,33 @@ interval:
               char kind = (source[0] == 'W') ? 'W' : (func == 0x04 ? 'I' : 'R');  // R = func03 reply, I = func04 reply, W = boiler write
               struct SniffSens { uint8_t addr; char kind; uint16_t reg; sensor::Sensor *s; float scale; int last; bool seen; };
               static SniffSens tbl[] = {
-                {0x29, 'W', 3003, id(sniff_29_w_3003), 0.1f, 0, false},
-                {0x29, 'R', 0, id(sniff_29_r_0), 1.0f, 0, false},
-                {0x29, 'R', 1, id(sniff_29_r_1), 1.0f, 0, false},
-                {0x29, 'R', 2103, id(sniff_29_r_2103), 1.0f, 0, false},
-                {0x33, 'W', 2012, id(sniff_33_w_2012), 1.0f, 0, false},
-                {0x1E, 'I', 15, id(sniff_1e_i_15), 1.0f, 0, false},
-                {0x1E, 'I', 20, id(sniff_1e_i_20), 1.0f, 0, false},
-                {0x1E, 'W', 5, id(sniff_1e_w_5), 1.0f, 0, false},
-                {0x29, 'W', 3011, id(sniff_29_w_3011), 0.1f, 0, false},
-                {0x29, 'W', 3012, id(sniff_29_w_3012), 0.1f, 0, false},
-                {0x29, 'W', 3013, id(sniff_29_w_3013), 0.1f, 0, false},
-                {0x29, 'W', 3014, id(sniff_29_w_3014), 0.1f, 0, false},
-                {0x29, 'W', 3015, id(sniff_29_w_3015), 0.1f, 0, false},
-                {0x33, 'W', 4199, id(sniff_33_w_4199), 1.0f, 0, false},
-                {0x1E, 'I', 3, id(sniff_1e_i_3), 0.1f, 0, false},
-                {0x1E, 'I', 4, id(sniff_1e_i_4), 0.1f, 0, false},
-                {0x1E, 'I', 5, id(sniff_1e_i_5), 0.1f, 0, false},
-                {0x1E, 'I', 6, id(sniff_1e_i_6), 0.1f, 0, false},
-                {0x1E, 'I', 10, id(sniff_1e_i_10), 0.1f, 0, false},
-                {0x1E, 'I', 11, id(sniff_1e_i_11), 1.0f, 0, false},
-                {0x1E, 'I', 13, id(sniff_1e_i_13), 0.1f, 0, false},
-                {0x1E, 'I', 14, id(sniff_1e_i_14), 1.0f, 0, false},
-                {0x1E, 'I', 16, id(sniff_1e_i_16), 1.0f, 0, false},
-                {0x1E, 'I', 17, id(sniff_1e_i_17), 0.1f, 0, false},
-                {0x1E, 'W', 20, id(sniff_1e_w_20), 0.1f, 0, false},
-                {0x1E, 'W', 21, id(sniff_1e_w_21), 0.1f, 0, false},
-                {0x1E, 'W', 22, id(sniff_1e_w_22), 0.1f, 0, false}
+                {0x29, 'W', 3003, id(dd_sniff_29_w_3003), 0.1f, 0, false},
+                {0x29, 'R', 0, id(dd_sniff_29_r_0), 1.0f, 0, false},
+                {0x29, 'R', 1, id(dd_sniff_29_r_1), 1.0f, 0, false},
+                {0x29, 'R', 2103, id(dd_sniff_29_r_2103), 1.0f, 0, false},
+                {0x33, 'W', 2012, id(dd_sniff_33_w_2012), 1.0f, 0, false},
+                {0x1E, 'I', 15, id(dd_sniff_1e_i_15), 1.0f, 0, false},
+                {0x1E, 'I', 20, id(dd_sniff_1e_i_20), 1.0f, 0, false},
+                {0x1E, 'W', 5, id(dd_sniff_1e_w_5), 1.0f, 0, false},
+                {0x29, 'W', 3011, id(dd_sniff_29_w_3011), 0.1f, 0, false},
+                {0x29, 'W', 3012, id(dd_sniff_29_w_3012), 0.1f, 0, false},
+                {0x29, 'W', 3013, id(dd_sniff_29_w_3013), 0.1f, 0, false},
+                {0x29, 'W', 3014, id(dd_sniff_29_w_3014), 0.1f, 0, false},
+                {0x29, 'W', 3015, id(dd_sniff_29_w_3015), 0.1f, 0, false},
+                {0x33, 'W', 4199, id(dd_sniff_33_w_4199), 1.0f, 0, false},
+                {0x1E, 'I', 3, id(dd_sniff_1e_i_3), 0.1f, 0, false},
+                {0x1E, 'I', 4, id(dd_sniff_1e_i_4), 0.1f, 0, false},
+                {0x1E, 'I', 5, id(dd_sniff_1e_i_5), 0.1f, 0, false},
+                {0x1E, 'I', 6, id(dd_sniff_1e_i_6), 0.1f, 0, false},
+                {0x1E, 'I', 10, id(dd_sniff_1e_i_10), 0.1f, 0, false},
+                {0x1E, 'I', 11, id(dd_sniff_1e_i_11), 1.0f, 0, false},
+                {0x1E, 'I', 13, id(dd_sniff_1e_i_13), 0.1f, 0, false},
+                {0x1E, 'I', 14, id(dd_sniff_1e_i_14), 1.0f, 0, false},
+                {0x1E, 'I', 16, id(dd_sniff_1e_i_16), 1.0f, 0, false},
+                {0x1E, 'I', 17, id(dd_sniff_1e_i_17), 0.1f, 0, false},
+                {0x1E, 'W', 20, id(dd_sniff_1e_w_20), 0.1f, 0, false},
+                {0x1E, 'W', 21, id(dd_sniff_1e_w_21), 0.1f, 0, false},
+                {0x1E, 'W', 22, id(dd_sniff_1e_w_22), 0.1f, 0, false}
               };
               for (auto &e : tbl) {
                 if (e.addr == addr && e.kind == kind && e.reg == reg) {
@@ -1520,8 +1663,8 @@ interval:
               if (addr == 0x29) {
                 struct SniffTxt { char kind; uint16_t reg; text_sensor::TextSensor *t; uint8_t map; int last; bool seen; };
                 static SniffTxt ttbl[] = {
-                  {'W', 6102, id(panel_a31_termostat), 0, 0, false},
-                  {'W', 2090, id(piec_stan_programu), 1, 0, false},
+                  {'W', 6102, id(dd_panel_a31_termostat), 0, 0, false},
+                  {'W', 2090, id(dd_piec_stan_programu), 1, 0, false},
                 };
                 for (auto &e : ttbl) {
                   if (e.kind == kind && e.reg == reg) {
@@ -1529,7 +1672,7 @@ interval:
                       e.last = value; e.seen = true;
                       const char *st = nullptr;
                       if (e.map == 0) st = (value == 0) ? "RPT" : (value == 1) ? "RT" : (value == 2) ? "RP" : nullptr;
-                      else st = (value == 4) ? "${t_prog_manual}" : (value == 64) ? "${t_prog_comfort}" : (value == 128) ? "${t_prog_eco}" : nullptr;
+                      else st = (value == 4) ? "${t_dd_prog_manual}" : (value == 64) ? "${t_dd_prog_comfort}" : (value == 128) ? "${t_dd_prog_eco}" : nullptr;
                       char sb[24];
                       if (st == nullptr) { snprintf(sb, sizeof(sb), "Code %d", value); st = sb; }
                       e.t->publish_state(st);
@@ -1539,30 +1682,30 @@ interval:
                 }
                 // Replies of a PHYSICAL panel (READ frames come only from other devices - our own TX is not heard)
                 // -> the controls mirror the panel; -1 (not set) is ignored.
-                if (kind == 'R' && reg == 6107 && (value == 0 || value == 1) && id(sw_punkt_rosy).state != (value == 1)) {
-                  id(sw_punkt_rosy).publish_state(value == 1);
+                if (kind == 'R' && reg == 6107 && (value == 0 || value == 1) && id(dd_sw_punkt_rosy).state != (value == 1)) {
+                  id(dd_sw_punkt_rosy).publish_state(value == 1);
                 }
                 if (kind == 'R' && reg == 6105 && (value == 0 || value == 1) &&
-                    (int) id(sel_modulacja_sonda).active_index().value_or(0) != value) {
-                  auto call = id(sel_modulacja_sonda).make_call(); call.set_index(value); call.perform();
+                    (int) id(dd_sel_modulacja_sonda).active_index().value_or(0) != value) {
+                  auto call = id(dd_sel_modulacja_sonda).make_call(); call.set_index(value); call.perform();
                 }
                 if (kind == 'R' && reg == 2294 && (value == 0 || value == 1) &&
-                    (int) id(sel_programy_czasowe).active_index().value_or(0) != value) {
-                  auto call = id(sel_programy_czasowe).make_call(); call.set_index(value); call.perform();
+                    (int) id(dd_sel_programy_czasowe).active_index().value_or(0) != value) {
+                  auto call = id(dd_sel_programy_czasowe).make_call(); call.set_index(value); call.perform();
                 }
-                if (kind == 'W' && reg == 6102 && value >= 0 && value <= 2 && value != id(panel_a31_raw)) {
-                  id(panel_a31_raw) = value;  // A31 belongs to the boiler - remember it to echo back
+                if (kind == 'W' && reg == 6102 && value >= 0 && value <= 2 && value != id(dd_panel_a31_raw)) {
+                  id(dd_panel_a31_raw) = value;  // A31 belongs to the boiler - remember it to echo back
                 }
                 if (kind == 'W' && reg == 6150) {  // heat-pump module present (A11 != OFF)
                   static int last6150 = -99999;
-                  if (value != last6150) { last6150 = value; id(piec_modul_pc_obecny).publish_state(value != 0); }
+                  if (value != last6150) { last6150 = value; id(dd_piec_modul_pc_obecny).publish_state(value != 0); }
                 }
                 if (kind == 'W' && reg == 2001) {
                   static int last2001 = -99999;
                   if (value != last2001) {
                     last2001 = value;
-                    id(piec_zadanie_cwu_oczek).publish_state((value & 0x01) != 0);
-                    id(piec_blad_aktywny_2001).publish_state((value & 0x04) != 0);
+                    id(dd_piec_zadanie_cwu_oczek).publish_state((value & 0x01) != 0);
+                    id(dd_piec_blad_aktywny_2001).publish_state((value & 0x04) != 0);
                   }
                 }
               }
@@ -1570,11 +1713,11 @@ interval:
               if (addr == 0x1E) {
                 struct SniffBin { char kind; uint16_t reg; binary_sensor::BinarySensor *b; int last; bool seen; };
                 static SniffBin btbl[] = {
-                  {'W', 0, id(pc_zlecenie_pracy), 0, false},
-                  {'I', 36, id(pc_sprezarka_pracuje), 0, false},
-                  {'I', 38, id(pc_wentylator_pracuje), 0, false},
-                  {'I', 40, id(pc_zlecenie_przyjete), 0, false},
-                  {'I', 12, id(pc_funkcja_nocna), 0, false},  // v1.3.1: night function U11 (MIM echo of W2)
+                  {'W', 0, id(dd_pc_zlecenie_pracy), 0, false},
+                  {'I', 36, id(dd_pc_sprezarka_pracuje), 0, false},
+                  {'I', 38, id(dd_pc_wentylator_pracuje), 0, false},
+                  {'I', 40, id(dd_pc_zlecenie_przyjete), 0, false},
+                  {'I', 12, id(dd_pc_funkcja_nocna), 0, false},  // v1.3.1: night function U11 (MIM echo of W2)
                 };
                 for (auto &b : btbl) {
                   if (b.kind == kind && b.reg == reg) {
@@ -1584,16 +1727,16 @@ interval:
                 }
                 if (kind == 'I' && reg == 12) {  // v1.3.1: capacity limit %, 0 = no limit -> 100 %
                   static int last12 = -99999;
-                  if (value != last12) { last12 = value; id(sniff_1e_i_12).publish_state(value == 0 ? 100.0f : (float) value); }
+                  if (value != last12) { last12 = value; id(dd_sniff_1e_i_12).publish_state(value == 0 ? 100.0f : (float) value); }
                 }
                 if (kind == 'I' && reg == 19) {  // operating stage: 1 standby, 2 starting, 3 running
                   static int last19 = -99999;
                   if (value != last19) {
                     last19 = value;
-                    const char *st = (value == 1) ? "${t_stage_standby}" : (value == 2) ? "${t_stage_starting}" : (value == 3) ? "${t_stage_running}" : nullptr;
+                    const char *st = (value == 1) ? "${t_dd_stage_standby}" : (value == 2) ? "${t_dd_stage_starting}" : (value == 3) ? "${t_dd_stage_running}" : nullptr;
                     char sb[24];
                     if (st == nullptr) { snprintf(sb, sizeof(sb), "Code %d", value); st = sb; }
-                    id(pc_etap_pracy).publish_state(st);
+                    id(dd_pc_etap_pracy).publish_state(st);
                   }
                 }
                 // I22-I29 firmware: 2 parts per register (decimal pairs). I22/23 outdoor main board, I24/25 inverter,
@@ -1607,7 +1750,7 @@ interval:
                     if (fw[m * 2] >= 0 && fw[m * 2 + 1] >= 0) {
                       char vb[20];
                       snprintf(vb, sizeof(vb), "%02d.%02d.%02d.%02d", fw[m * 2] / 100, fw[m * 2] % 100, fw[m * 2 + 1] / 100, fw[m * 2 + 1] % 100);
-                      text_sensor::TextSensor *ts[4] = {id(pc_fw_odu_main), id(pc_fw_inv_fw), id(pc_fw_inv_mem), id(pc_fw_interface)};
+                      text_sensor::TextSensor *ts[4] = {id(dd_pc_fw_odu_main), id(dd_pc_fw_inv_fw), id(dd_pc_fw_inv_mem), id(dd_pc_fw_interface)};
                       ts[m]->publish_state(vb);
                     }
                   }
@@ -1624,7 +1767,7 @@ interval:
                   static const char *DN[8] = {"?", "Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"};
                   char cbuf[24];
                   snprintf(cbuf, sizeof(cbuf), "%s %02u:%02u", DN[(u >> 13) & 7], (unsigned) ((u >> 8) & 0x1F), (unsigned) (u & 0xFF));
-                  id(sniff_clock_2300).publish_state(cbuf);
+                  id(dd_sniff_clock_2300).publish_state(cbuf);
                 }
               }
               if (id(dd_sniff_enabled)) {
@@ -1653,7 +1796,7 @@ interval:
                   if (slot->n <= 20) {
                     char buf[72];
                     snprintf(buf, sizeof(buf), "0x%02X %c %u: %d -> %d (chg %u)", (unsigned) addr, kind, (unsigned) reg, old, value, (unsigned) slot->n);
-                    id(sniff_last_change).publish_state(buf);
+                    id(dd_sniff_last_change).publish_state(buf);
                   }
                 }
               }
@@ -1681,19 +1824,19 @@ interval:
               return;
             }
 
-            // v101: "${t_src_panel}" source (slot 1) for Zone 2/3 = real temp/humidity PDU of the physical panel
+            // v101: "${t_dd_src_panel}" source (slot 1) for Zone 2/3 = real temp/humidity PDU of the physical panel
             // 0x2A/0x2B (when connected and transmitting). Feeds the slot-1 buffer; when Panel selected (idx==1) -> to output.
             if (addr == 0x2A || addr == 0x2B) {
               bool z2 = (addr == 0x2A);
               if (reg == 2005 || reg == REG_ZONE1_TEMP_COPY || reg == REG_ZONE1_TEMP_OLD) {
                 if (valid_temp_x10(value)) {
-                  if (z2) { id(ha_temp_raw_z2_1) = value; if (id(temp_src_z2_idx) == 1) id(ha_room_temp_2_raw) = value; }
-                  else    { id(ha_temp_raw_z3_1) = value; if (id(temp_src_z3_idx) == 1) id(ha_room_temp_3_raw) = value; }
+                  if (z2) { id(dd_ha_temp_raw_z2_1) = value; if (id(dd_temp_src_z2_idx) == 1) id(dd_ha_room_temp_2_raw) = value; }
+                  else    { id(dd_ha_temp_raw_z3_1) = value; if (id(dd_temp_src_z3_idx) == 1) id(dd_ha_room_temp_3_raw) = value; }
                 }
               } else if (reg == 2006 || reg == 3010) {
                 if (value > 0 && value <= 100) {
-                  if (z2) { id(ha_hum_raw_z2_1) = value; if (id(hum_src_z2_idx) == 1) id(ha_room_humidity_2_raw) = value; }
-                  else    { id(ha_hum_raw_z3_1) = value; if (id(hum_src_z3_idx) == 1) id(ha_room_humidity_3_raw) = value; }
+                  if (z2) { id(dd_ha_hum_raw_z2_1) = value; if (id(dd_hum_src_z2_idx) == 1) id(dd_ha_room_humidity_2_raw) = value; }
+                  else    { id(dd_ha_hum_raw_z3_1) = value; if (id(dd_hum_src_z3_idx) == 1) id(dd_ha_room_humidity_3_raw) = value; }
                 }
               }
             }
@@ -1707,16 +1850,16 @@ interval:
             if ((addr == 0x29 || addr == 0x33) && reg == REG_MODE) {
               // The boiler writes back the current mode (reported state). A change made elsewhere (panel) is
               // adopted as the mode the Dominus serves; HA commands and stale echoes are arbitrated (lww_guard.h).
-              id(operating_mode_reported) = value;
-              if (lww::adopt(lww::OPERATING_MODE, "operating_mode", source, addr, id(operating_mode_raw), value)) {
-                id(operating_mode_raw) = value;
+              id(dd_operating_mode_reported) = value;
+              if (lww::adopt(lww::OPERATING_MODE, "operating_mode", source, addr, id(dd_operating_mode_raw), value)) {
+                id(dd_operating_mode_raw) = value;
               }
 
               const char *mode_name = "Nieznany";
-              if (value == 0) mode_name = "${t_mode_standby}";
-              else if (value == 1) mode_name = "${t_mode_summer}";
-              else if (value == 2) mode_name = "${t_mode_cooling}";
-              else if (value == 3) mode_name = "${t_mode_winter}";
+              if (value == 0) mode_name = "${t_dd_mode_standby}";
+              else if (value == 1) mode_name = "${t_dd_mode_summer}";
+              else if (value == 2) mode_name = "${t_dd_mode_cooling}";
+              else if (value == 3) mode_name = "${t_dd_mode_winter}";
 
               ESP_LOGI("dd_value", "%s Tryb pracy addr=0x%02X PDU 2000 = %d / %s", source, addr, value, mode_name);
               return;
@@ -1731,18 +1874,18 @@ interval:
                 ESP_LOGW("dd_value", "%s addr=0x29 Zone1 temp PDU %u INVALID = %d / 0x%04X - ignoruję", source, reg, value, (uint16_t) value);
                 return;
               }
-              id(zone1_temp_raw) = value;
-              id(zone1_temp_sensor).publish_state(value / 10.0f);
-              id(ha_temp_raw_1) = value;  // v101: "${t_src_panel}" source = real PDU 2005 of the physical panel 0x29
-              if (id(temp_src_idx) == 1) id(ha_room_temp_raw) = value;
+              id(dd_zone1_temp_raw) = value;
+              id(dd_zone1_temp_sensor).publish_state(value / 10.0f);
+              id(dd_ha_temp_raw_1) = value;  // v101: "${t_dd_src_panel}" source = real PDU 2005 of the physical panel 0x29
+              if (id(dd_temp_src_idx) == 1) id(dd_ha_room_temp_raw) = value;
               ESP_LOGI("dd_value", "%s addr=0x29 Zone1 temp PDU %u = %d / %.1f°C", source, reg, value, value / 10.0f);
               return;
             }
 
-            if (reg == REG_ZONE1_TEMP_OLD && addr != 0x2A && addr != 0x2B) {  // v103: temp 0x2A/0x2B -> blok "${t_src_panel}" wyzej
+            if (reg == REG_ZONE1_TEMP_OLD && addr != 0x2A && addr != 0x2B) {  // v103: temp 0x2A/0x2B -> blok "${t_dd_src_panel}" wyzej
               if (!valid_temp_x10(value)) return;
-              id(zone1_temp_raw) = value;
-              id(zone1_temp_sensor).publish_state(value / 10.0f);
+              id(dd_zone1_temp_raw) = value;
+              id(dd_zone1_temp_sensor).publish_state(value / 10.0f);
               return;
             }
 
@@ -1750,17 +1893,17 @@ interval:
             // Active setpoint / U03
             // ------------------------------------------------------------
             if (reg == REG_ZONE1_SETPOINT) {
-              if (addr == 0x2A) { if (value != id(zone2_setpoint_last_bus)) { id(zone2_setpoint_raw) = value; id(zone2_setpoint_number).publish_state(value / 10.0f); } id(zone2_setpoint_last_bus) = value; }  // v118 last-writer-wins
-              else if (addr == 0x2B) { if (value != id(zone3_setpoint_last_bus)) { id(zone3_setpoint_raw) = value; id(zone3_setpoint_number).publish_state(value / 10.0f); } id(zone3_setpoint_last_bus) = value; }  // v118 last-writer-wins
-              else if (lww::adopt(lww::ZONE1_SETPOINT, "zone1_setpoint", source, addr, id(zone1_setpoint_raw), value)) { id(zone1_setpoint_raw) = value; id(zone1_setpoint_number).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
+              if (addr == 0x2A) { if (value != id(dd_zone2_setpoint_last_bus)) { id(dd_zone2_setpoint_raw) = value; id(dd_zone2_setpoint_number).publish_state(value / 10.0f); } id(dd_zone2_setpoint_last_bus) = value; }  // v118 last-writer-wins
+              else if (addr == 0x2B) { if (value != id(dd_zone3_setpoint_last_bus)) { id(dd_zone3_setpoint_raw) = value; id(dd_zone3_setpoint_number).publish_state(value / 10.0f); } id(dd_zone3_setpoint_last_bus) = value; }  // v118 last-writer-wins
+              else if (lww::adopt(lww::ZONE1_SETPOINT, "zone1_setpoint", source, addr, id(dd_zone1_setpoint_raw), value)) { id(dd_zone1_setpoint_raw) = value; id(dd_zone1_setpoint_number).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X setpoint PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
 
             if (reg == REG_ZONE1_OFFSET || reg == REG_ZONE1_OFFSET_COPY) {
-              if (addr == 0x2A) { id(zone2_offset_raw) = value; id(zone2_offset_number).publish_state(value / 10.0f); }
-              else if (addr == 0x2B) { id(zone3_offset_raw) = value; id(zone3_offset_number).publish_state(value / 10.0f); }
-              else if (lww::adopt(lww::ZONE1_OFFSET, "zone1_offset", source, addr, id(zone1_offset_raw), value)) { id(zone1_offset_raw) = value; id(zone1_offset_number).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
+              if (addr == 0x2A) { id(dd_zone2_offset_raw) = value; id(dd_zone2_offset_number).publish_state(value / 10.0f); }
+              else if (addr == 0x2B) { id(dd_zone3_offset_raw) = value; id(dd_zone3_offset_number).publish_state(value / 10.0f); }
+              else if (lww::adopt(lww::ZONE1_OFFSET, "zone1_offset", source, addr, id(dd_zone1_offset_raw), value)) { id(dd_zone1_offset_raw) = value; id(dd_zone1_offset_number).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X offset PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -1778,24 +1921,24 @@ interval:
             if (reg == REG_DHW_SETPOINT) {
               // Master DHW setpoint 2095: arbitrated like the other served registers (lww_guard.h). A change made on
               // the panel reaches the Dominus as a boiler write, so writes are adopted too.
-              if (lww::adopt(lww::DHW_SETPOINT, "dhw_setpoint", source, addr, id(cwu_setpoint_raw), value)) {
-                id(cwu_setpoint_raw) = value;
-                id(cwu_setpoint_number).publish_state(value / 10.0f);
+              if (lww::adopt(lww::DHW_SETPOINT, "dhw_setpoint", source, addr, id(dd_cwu_setpoint_raw), value)) {
+                id(dd_cwu_setpoint_raw) = value;
+                id(dd_cwu_setpoint_number).publish_state(value / 10.0f);
               }
               ESP_LOGI("dd_value", "%s DHW setpoint PDU %u = %d / %.1f°C", source, reg, value, value / 10.0f);
               return;
             }
 
             if (reg == REG_DHW_TEMP) {
-              id(dhw_temp_raw) = value;
-              id(dhw_temp_sensor).publish_state(value / 10.0f);
+              id(dd_dhw_temp_raw) = value;
+              id(dd_dhw_temp_sensor).publish_state(value / 10.0f);
               ESP_LOGI("dd_value", "%s DHW temp PDU %u = %d / %.1f°C", source, reg, value, value / 10.0f);
               return;
             }
 
             if (reg == REG_OUTSIDE_TEMP) {
-              id(outside_temp_raw) = value;
-              id(outside_temp_sensor).publish_state(value / 10.0f);
+              id(dd_outside_temp_raw) = value;
+              id(dd_outside_temp_sensor).publish_state(value / 10.0f);
               ESP_LOGI("dd_value", "%s Outside temp PDU %u = %d / %.1f°C", source, reg, value, value / 10.0f);
               return;
             }
@@ -1804,49 +1947,49 @@ interval:
             // Dominus - sliders/settings
             // ------------------------------------------------------------
             if (reg == REG_COMFORT_HEAT) {
-              if (addr == 0x2A) { id(dominus_comfort_heat_z2_raw) = value; id(number_dominus_comfort_heat_z2).publish_state(value / 10.0f); }
-              else if (addr == 0x2B) { id(dominus_comfort_heat_z3_raw) = value; id(number_dominus_comfort_heat_z3).publish_state(value / 10.0f); }
-              else if (lww::adopt(lww::COMFORT_HEAT, "dominus_comfort_heat", source, addr, id(dominus_comfort_heat_raw), value)) { id(dominus_comfort_heat_raw) = value; id(number_dominus_comfort_heat).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
+              if (addr == 0x2A) { id(dd_dominus_comfort_heat_z2_raw) = value; id(dd_number_dominus_comfort_heat_z2).publish_state(value / 10.0f); }
+              else if (addr == 0x2B) { id(dd_dominus_comfort_heat_z3_raw) = value; id(dd_number_dominus_comfort_heat_z3).publish_state(value / 10.0f); }
+              else if (lww::adopt(lww::COMFORT_HEAT, "dominus_comfort_heat", source, addr, id(dd_dominus_comfort_heat_raw), value)) { id(dd_dominus_comfort_heat_raw) = value; id(dd_number_dominus_comfort_heat).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Comfort Heat PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
 
             if (reg == REG_ECO_HEAT) {
-              if (addr == 0x2A) { id(dominus_eco_heat_z2_raw) = value; id(number_dominus_eco_heat_z2).publish_state(value / 10.0f); }
-              else if (addr == 0x2B) { id(dominus_eco_heat_z3_raw) = value; id(number_dominus_eco_heat_z3).publish_state(value / 10.0f); }
-              else if (lww::adopt(lww::ECO_HEAT, "dominus_eco_heat", source, addr, id(dominus_eco_heat_raw), value)) { id(dominus_eco_heat_raw) = value; id(number_dominus_eco_heat).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
+              if (addr == 0x2A) { id(dd_dominus_eco_heat_z2_raw) = value; id(dd_number_dominus_eco_heat_z2).publish_state(value / 10.0f); }
+              else if (addr == 0x2B) { id(dd_dominus_eco_heat_z3_raw) = value; id(dd_number_dominus_eco_heat_z3).publish_state(value / 10.0f); }
+              else if (lww::adopt(lww::ECO_HEAT, "dominus_eco_heat", source, addr, id(dd_dominus_eco_heat_raw), value)) { id(dd_dominus_eco_heat_raw) = value; id(dd_number_dominus_eco_heat).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Eco Heat PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
 
             if (reg == REG_COMFORT_COOL) {
-              if (addr == 0x2A) { id(dominus_comfort_cool_z2_raw) = value; id(number_dominus_comfort_cool_z2).publish_state(value / 10.0f); }
-              else if (addr == 0x2B) { id(dominus_comfort_cool_z3_raw) = value; id(number_dominus_comfort_cool_z3).publish_state(value / 10.0f); }
-              else if (lww::adopt(lww::COMFORT_COOL, "dominus_comfort_cool", source, addr, id(dominus_comfort_cool_raw), value)) { id(dominus_comfort_cool_raw) = value; id(number_dominus_comfort_cool).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
+              if (addr == 0x2A) { id(dd_dominus_comfort_cool_z2_raw) = value; id(dd_number_dominus_comfort_cool_z2).publish_state(value / 10.0f); }
+              else if (addr == 0x2B) { id(dd_dominus_comfort_cool_z3_raw) = value; id(dd_number_dominus_comfort_cool_z3).publish_state(value / 10.0f); }
+              else if (lww::adopt(lww::COMFORT_COOL, "dominus_comfort_cool", source, addr, id(dd_dominus_comfort_cool_raw), value)) { id(dd_dominus_comfort_cool_raw) = value; id(dd_number_dominus_comfort_cool).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Comfort Cool PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
 
             if (reg == REG_ECO_COOL_COPY || reg == REG_ECO_COOL) {
-              if (addr == 0x2A) { id(dominus_eco_cool_z2_raw) = value; id(number_dominus_eco_cool_z2).publish_state(value / 10.0f); }
-              else if (addr == 0x2B) { id(dominus_eco_cool_z3_raw) = value; id(number_dominus_eco_cool_z3).publish_state(value / 10.0f); }
-              else if (lww::adopt(lww::ECO_COOL, "dominus_eco_cool", source, addr, id(dominus_eco_cool_raw), value)) { id(dominus_eco_cool_raw) = value; id(number_dominus_eco_cool).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
+              if (addr == 0x2A) { id(dd_dominus_eco_cool_z2_raw) = value; id(dd_number_dominus_eco_cool_z2).publish_state(value / 10.0f); }
+              else if (addr == 0x2B) { id(dd_dominus_eco_cool_z3_raw) = value; id(dd_number_dominus_eco_cool_z3).publish_state(value / 10.0f); }
+              else if (lww::adopt(lww::ECO_COOL, "dominus_eco_cool", source, addr, id(dd_dominus_eco_cool_raw), value)) { id(dd_dominus_eco_cool_raw) = value; id(dd_number_dominus_eco_cool).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Eco Cool PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
 
             if (reg == REG_HUMIDITY) {
-              if (addr == 0x2A) { id(dominus_humidity_z2_raw) = value; id(number_dominus_humidity_z2).publish_state(value); }
-              else if (addr == 0x2B) { id(dominus_humidity_z3_raw) = value; id(number_dominus_humidity_z3).publish_state(value); }
-              else if (lww::adopt(lww::HUMIDITY, "dominus_humidity", source, addr, id(dominus_humidity_raw), value)) { id(dominus_humidity_raw) = value; id(number_dominus_humidity).publish_state(value); }  // arbitrated (lww_guard.h)
+              if (addr == 0x2A) { id(dd_dominus_humidity_z2_raw) = value; id(dd_number_dominus_humidity_z2).publish_state(value); }
+              else if (addr == 0x2B) { id(dd_dominus_humidity_z3_raw) = value; id(dd_number_dominus_humidity_z3).publish_state(value); }
+              else if (lww::adopt(lww::HUMIDITY, "dominus_humidity", source, addr, id(dd_dominus_humidity_raw), value)) { id(dd_dominus_humidity_raw) = value; id(dd_number_dominus_humidity).publish_state(value); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Umidity PDU %u = %d%%", source, addr, reg, value);
               return;
             }
 
             if (reg == REG_SET_FLOW) {
-              if (addr == 0x2A) { id(dominus_set_flow_z2_raw) = value; id(number_dominus_set_flow_z2).publish_state(value / 10.0f); }
-              else if (addr == 0x2B) { id(dominus_set_flow_z3_raw) = value; id(number_dominus_set_flow_z3).publish_state(value / 10.0f); }
-              else if (lww::adopt(lww::SET_FLOW, "dominus_set_flow", source, addr, id(dominus_set_flow_raw), value)) { id(dominus_set_flow_raw) = value; id(number_dominus_set_flow).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
+              if (addr == 0x2A) { id(dd_dominus_set_flow_z2_raw) = value; id(dd_number_dominus_set_flow_z2).publish_state(value / 10.0f); }
+              else if (addr == 0x2B) { id(dd_dominus_set_flow_z3_raw) = value; id(dd_number_dominus_set_flow_z3).publish_state(value / 10.0f); }
+              else if (lww::adopt(lww::SET_FLOW, "dominus_set_flow", source, addr, id(dd_dominus_set_flow_raw), value)) { id(dd_dominus_set_flow_raw) = value; id(dd_number_dominus_set_flow).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Flow PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -1855,26 +1998,26 @@ interval:
             // 0x29 diagnostics
             // ------------------------------------------------------------
             if (addr == 0x29 && reg == 2006) {
-              id(pdu_29_2006_raw) = value;
-              id(sensor_zone1_humidity).publish_state(value);
-              id(ha_hum_raw_1) = value;  // v101: "${t_src_panel}" source = real PDU 2006 of the physical panel 0x29
-              if (id(hum_src_idx) == 1) id(ha_room_humidity_raw) = value;
+              id(dd_pdu_29_2006_raw) = value;
+              id(dd_sensor_zone1_humidity).publish_state(value);
+              id(dd_ha_hum_raw_1) = value;  // v101: "${t_dd_src_panel}" source = real PDU 2006 of the physical panel 0x29
+              if (id(dd_hum_src_idx) == 1) id(dd_ha_room_humidity_raw) = value;
               ESP_LOGI("dd_value", "%s Wilgotność Strefy 1 PDU 2006 = %d%%", source, value);
               return;
             }
             if (addr == 0x29 && reg == 3010) {
               // v77: 3010 = copy of Zone 1 humidity; we update the main sensor only.
-              if (value > 0 && value <= 100) id(sensor_zone1_humidity).publish_state(value);
+              if (value > 0 && value <= 100) id(dd_sensor_zone1_humidity).publish_state(value);
               ESP_LOGI("dd_value", "%s Wilgotność Strefy 1 PDU 3010 = %d%%", source, value);
               return;
             }
             if (addr == 0x29 && reg == 2300) {
-              id(pdu_29_2300_raw) = value;
+              id(dd_pdu_29_2300_raw) = value;
               ESP_LOGD("dd_value", "%s Czas/licznik sterownika raw PDU 2300 = %d / 0x%04X", source, value, (uint16_t) value);
               return;
             }
             if (addr == 0x29 && reg == 2302) {
-              id(pdu_29_2302_raw) = value;
+              id(dd_pdu_29_2302_raw) = value;
               uint16_t raw = (uint16_t) value;
               int day = (raw >> 8) & 0xFF;
               int month = raw & 0xFF;
@@ -1882,19 +2025,19 @@ interval:
               return;
             }
             if (addr == 0x29 && reg == 2303) {
-              id(pdu_29_2303_raw) = value;
+              id(dd_pdu_29_2303_raw) = value;
               ESP_LOGI("dd_value", "%s Rok sterownika PDU 2303 = %d", source, value);
               return;
             }
-            if (addr == 0x29 && reg == REG_DHW_TEMP_COPY_2293) { id(pdu_29_2293_raw) = value; return; }
-            if (addr == 0x29 && reg == 3011) { id(pdu_29_3011_raw) = value; return; }
-            if (addr == 0x29 && reg == 3012) { id(pdu_29_3012_raw) = value; return; }
-            if (addr == 0x29 && reg == 3013) { id(pdu_29_3013_raw) = value; return; }
-            if (addr == 0x29 && reg == 3014) { id(pdu_29_3014_raw) = value; return; }
-            if (addr == 0x29 && reg == 3031) { id(pdu_29_3031_raw) = value; id(sensor_pdu_29_3031_version).publish_state(value / 100.0f); return; }
-            if (addr == 0x29 && reg == 3042) { id(pdu_29_3042_raw) = value; id(sensor_pdu_29_3042_version).publish_state(value / 100.0f); return; }
-            if (addr == 0x2A && reg == 3042) { id(pdu_2a_version_raw) = value; id(sensor_panel2_version).publish_state(value / 100.0f); return; }
-            if (addr == 0x2B && reg == 3042) { id(pdu_2b_version_raw) = value; id(sensor_panel3_version).publish_state(value / 100.0f); return; }
+            if (addr == 0x29 && reg == REG_DHW_TEMP_COPY_2293) { id(dd_pdu_29_2293_raw) = value; return; }
+            if (addr == 0x29 && reg == 3011) { id(dd_pdu_29_3011_raw) = value; return; }
+            if (addr == 0x29 && reg == 3012) { id(dd_pdu_29_3012_raw) = value; return; }
+            if (addr == 0x29 && reg == 3013) { id(dd_pdu_29_3013_raw) = value; return; }
+            if (addr == 0x29 && reg == 3014) { id(dd_pdu_29_3014_raw) = value; return; }
+            if (addr == 0x29 && reg == 3031) { id(dd_pdu_29_3031_raw) = value; id(dd_sensor_pdu_29_3031_version).publish_state(value / 100.0f); return; }
+            if (addr == 0x29 && reg == 3042) { id(dd_pdu_29_3042_raw) = value; id(dd_sensor_pdu_29_3042_version).publish_state(value / 100.0f); return; }
+            if (addr == 0x2A && reg == 3042) { id(dd_pdu_2a_version_raw) = value; id(dd_sensor_panel2_version).publish_state(value / 100.0f); return; }
+            if (addr == 0x2B && reg == 3042) { id(dd_pdu_2b_version_raw) = value; id(dd_sensor_panel3_version).publish_state(value / 100.0f); return; }
 
             // FIX chrono: the boiler propagates schedule changes made on another device (e.g. the physical panel)
             // by WRITING them to 0x33. Before, these writes were dropped: the emulator kept serving the old HA values
@@ -1911,10 +2054,10 @@ interval:
 
               if (reg <= 2347 && (reg % 10) <= 7) {
                 datetime::TimeEntity *cal[4][8] = {
-                  {id(dt_cal1_f1_on), id(dt_cal1_f1_off), id(dt_cal1_f2_on), id(dt_cal1_f2_off), id(dt_cal1_f3_on), id(dt_cal1_f3_off), id(dt_cal1_f4_on), id(dt_cal1_f4_off)},
-                  {id(dt_cal2_f1_on), id(dt_cal2_f1_off), id(dt_cal2_f2_on), id(dt_cal2_f2_off), id(dt_cal2_f3_on), id(dt_cal2_f3_off), id(dt_cal2_f4_on), id(dt_cal2_f4_off)},
-                  {id(dt_cal3_f1_on), id(dt_cal3_f1_off), id(dt_cal3_f2_on), id(dt_cal3_f2_off), id(dt_cal3_f3_on), id(dt_cal3_f3_off), id(dt_cal3_f4_on), id(dt_cal3_f4_off)},
-                  {id(dt_cal4_f1_on), id(dt_cal4_f1_off), id(dt_cal4_f2_on), id(dt_cal4_f2_off), id(dt_cal4_f3_on), id(dt_cal4_f3_off), id(dt_cal4_f4_on), id(dt_cal4_f4_off)}
+                  {id(dd_dt_cal1_f1_on), id(dd_dt_cal1_f1_off), id(dd_dt_cal1_f2_on), id(dd_dt_cal1_f2_off), id(dd_dt_cal1_f3_on), id(dd_dt_cal1_f3_off), id(dd_dt_cal1_f4_on), id(dd_dt_cal1_f4_off)},
+                  {id(dd_dt_cal2_f1_on), id(dd_dt_cal2_f1_off), id(dd_dt_cal2_f2_on), id(dd_dt_cal2_f2_off), id(dd_dt_cal2_f3_on), id(dd_dt_cal2_f3_off), id(dd_dt_cal2_f4_on), id(dd_dt_cal2_f4_off)},
+                  {id(dd_dt_cal3_f1_on), id(dd_dt_cal3_f1_off), id(dd_dt_cal3_f2_on), id(dd_dt_cal3_f2_off), id(dd_dt_cal3_f3_on), id(dd_dt_cal3_f3_off), id(dd_dt_cal3_f4_on), id(dd_dt_cal3_f4_off)},
+                  {id(dd_dt_cal4_f1_on), id(dd_dt_cal4_f1_off), id(dd_dt_cal4_f2_on), id(dd_dt_cal4_f2_off), id(dd_dt_cal4_f3_on), id(dd_dt_cal4_f3_off), id(dd_dt_cal4_f4_on), id(dd_dt_cal4_f4_off)}
                 };
                 uint8_t hh = ((uint16_t) value >> 8) & 0x1F;
                 uint8_t mm = (uint16_t) value & 0xFF;
@@ -1934,10 +2077,10 @@ interval:
 
               // Day -> calendar assignments: Zone 1 (2410-2416), Zone 2 (2420-2426), Zone 3 (2430-2436), DHW (2490-2496).
               select::Select *days = nullptr;
-              if (reg >= 2410 && reg <= 2416) { select::Select *s[7] = {id(sel_weekday_1), id(sel_weekday_2), id(sel_weekday_3), id(sel_weekday_4), id(sel_weekday_5), id(sel_weekday_6), id(sel_weekday_7)}; days = s[reg - 2410]; }
-              else if (reg >= 2420 && reg <= 2426) { select::Select *s[7] = {id(sel_weekday_z2_1), id(sel_weekday_z2_2), id(sel_weekday_z2_3), id(sel_weekday_z2_4), id(sel_weekday_z2_5), id(sel_weekday_z2_6), id(sel_weekday_z2_7)}; days = s[reg - 2420]; }
-              else if (reg >= 2430 && reg <= 2436) { select::Select *s[7] = {id(sel_weekday_z3_1), id(sel_weekday_z3_2), id(sel_weekday_z3_3), id(sel_weekday_z3_4), id(sel_weekday_z3_5), id(sel_weekday_z3_6), id(sel_weekday_z3_7)}; days = s[reg - 2430]; }
-              else if (reg >= 2490 && reg <= 2496) { select::Select *s[7] = {id(sel_dhw_weekday_1), id(sel_dhw_weekday_2), id(sel_dhw_weekday_3), id(sel_dhw_weekday_4), id(sel_dhw_weekday_5), id(sel_dhw_weekday_6), id(sel_dhw_weekday_7)}; days = s[reg - 2490]; }
+              if (reg >= 2410 && reg <= 2416) { select::Select *s[7] = {id(dd_sel_weekday_1), id(dd_sel_weekday_2), id(dd_sel_weekday_3), id(dd_sel_weekday_4), id(dd_sel_weekday_5), id(dd_sel_weekday_6), id(dd_sel_weekday_7)}; days = s[reg - 2410]; }
+              else if (reg >= 2420 && reg <= 2426) { select::Select *s[7] = {id(dd_sel_weekday_z2_1), id(dd_sel_weekday_z2_2), id(dd_sel_weekday_z2_3), id(dd_sel_weekday_z2_4), id(dd_sel_weekday_z2_5), id(dd_sel_weekday_z2_6), id(dd_sel_weekday_z2_7)}; days = s[reg - 2420]; }
+              else if (reg >= 2430 && reg <= 2436) { select::Select *s[7] = {id(dd_sel_weekday_z3_1), id(dd_sel_weekday_z3_2), id(dd_sel_weekday_z3_3), id(dd_sel_weekday_z3_4), id(dd_sel_weekday_z3_5), id(dd_sel_weekday_z3_6), id(dd_sel_weekday_z3_7)}; days = s[reg - 2430]; }
+              else if (reg >= 2490 && reg <= 2496) { select::Select *s[7] = {id(dd_sel_dhw_weekday_1), id(dd_sel_dhw_weekday_2), id(dd_sel_dhw_weekday_3), id(dd_sel_dhw_weekday_4), id(dd_sel_dhw_weekday_5), id(dd_sel_dhw_weekday_6), id(dd_sel_dhw_weekday_7)}; days = s[reg - 2490]; }
               if (days != nullptr && value >= 1 && value <= 4) {
                 auto cur = days->active_index();
                 if (!cur.has_value() || (int) cur.value() != value - 1) {
@@ -2089,8 +2232,8 @@ interval:
               uint16_t count = ((uint16_t) frame[4] << 8) | frame[5];
               last_start_03[addr] = start;
               send_emu_zone_read03(0x2A, start, count,
-                                   id(ha_room_temp_2_raw), id(ha_room_humidity_2_raw),
-                                   id(zone2_setpoint_raw), id(zone2_offset_raw));
+                                   id(dd_ha_room_temp_2_raw), id(dd_ha_room_humidity_2_raw),
+                                   id(dd_zone2_setpoint_raw), id(dd_zone2_offset_raw));
               ESP_LOGI("dd_rx", "addr=0x2A func=0x03 len=%d crc=OK frame=%s", len, hex_frame(frame).c_str());
               continue;
             }
@@ -2101,8 +2244,8 @@ interval:
               uint16_t count = ((uint16_t) frame[4] << 8) | frame[5];
               last_start_03[addr] = start;
               send_emu_zone_read03(0x2B, start, count,
-                                   id(ha_room_temp_3_raw), id(ha_room_humidity_3_raw),
-                                   id(zone3_setpoint_raw), id(zone3_offset_raw));
+                                   id(dd_ha_room_temp_3_raw), id(dd_ha_room_humidity_3_raw),
+                                   id(dd_zone3_setpoint_raw), id(dd_zone3_offset_raw));
               ESP_LOGI("dd_rx", "addr=0x2B func=0x03 len=%d crc=OK frame=%s", len, hex_frame(frame).c_str());
               continue;
             }
