@@ -1,5 +1,7 @@
 # Immergas Magis Pro / Combo — Dominus / Panel emulator on the D+/D- Modbus bus (ESPHome, M5 Atom)
 
+🇬🇧 English | 🇵🇱 [Polski](README.pl.md)
+
 Control an **Immergas Magis Combo** boiler from **Home Assistant** by **emulating the Dominus remote and the zone panels** on the **D+/D- (Modbus RS485)** bus — with an **M5Stack Atom + ESPHome**. No cloud, no proprietary Dominus controller.
 
 The boiler is the Modbus **master**; this device is a **slave** that answers as the Dominus (`0x33`) and/or the zone panels (`0x29` / `0x2A` / `0x2B`). It feeds the boiler room temperature & humidity from **any Home Assistant sensor** and exposes the panel/Dominus settings as HA entities.
