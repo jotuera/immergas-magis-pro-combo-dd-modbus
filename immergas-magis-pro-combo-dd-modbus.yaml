@@ -83,6 +83,10 @@ substitutions:
 
 esphome:
   name: immergas-dd-atom
+  # Bus/HA arbitration for the registers the emulated Dominus serves (file next to this YAML).
+  includes:
+    - lww_guard.h
+    - faults_i18n.h   # fault descriptions EN/IT (language chosen with the "Fault language" select)
   friendly_name: Immergas D+D- Atom
   comment: "Immergas Dominus/Panel (D+/D-) emulator | author: ${author} | ${github_url}"
   project:
@@ -92,11 +96,15 @@ esphome:
     priority: 800
     then:
       - lambda: |-
-          // v48: normalna polaryzacja DE/RE.
-          // LOW = RX/idle, HIGH = TX.
-          gpio_set_direction(GPIO_NUM_23, GPIO_MODE_OUTPUT);
-          gpio_set_level(GPIO_NUM_23, 0);
-          ESP_LOGW("dd_rs485", "v75 RS485 DE GPIO23 LOW idle; Dominus 0x33 + panel 0x29 + termostaty + chrono S1 (selekty dni) + bledy + faza S1 + status (no-RAW lean) v113 keepalive ready");
+          // RS485 DE (GPIO23) is driven by the UART hardware (uart: flow_control_pin), not from here.
+          ESP_LOGW("dd_rs485", "RS485 hardware DE on GPIO23; Dominus 0x33 + panels + thermostats + chrono + faults + status ready, fw ${project_version}");
+
+# Bus-backed climate entities (components/bus_climate next to this YAML).
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [bus_climate]
 
 esp32:
   board: m5stack-atom
@@ -123,8 +131,18 @@ ota:
   - platform: esphome
 
 logger:
-  level: DEBUG
+  # INFO in normal use (DEBUG logs every bus frame); switch to DEBUG only for bus sniffing sessions.
+  level: INFO
   baud_rate: 0
+
+# Runtime diagnostics (reset reason, loop time, free heap): tell a reboot or a blocked loop from an entity glitch.
+debug:
+  update_interval: 10s
+
+# HA time, used only for the drift of the boiler clock (PDU 2300).
+time:
+  - platform: homeassistant
+    id: ha_time
 
 # v111: lokalny panel WWW (fallback gdy HA niedostepny; local:true = assety wbudowane, bez internetu).
 web_server:
@@ -141,6 +159,11 @@ uart:
   id: dd_uart
   tx_pin: GPIO26
   rx_pin: GPIO32
+  # RS485 half-duplex in hardware (ESP-IDF UART_MODE_RS485_HALF_DUPLEX): the UART raises DE (RTS on GPIO23,
+  # HIGH = TX) right before the start bit and drops it after the last stop bit. write_array() returns at once:
+  # no flush()/busy-wait in the main loop. Previously DE was toggled in software with a 12/15 ms hold after
+  # every reply (~25-40 ms of blocked loop per frame, a few hundred frames per minute).
+  flow_control_pin: GPIO23
   baud_rate: 9600
   data_bits: 8
   parity: EVEN
@@ -391,6 +414,12 @@ globals:
     restore_value: no
     initial_value: '0'
 
+  # CRC failures seen by the RX parser since boot (relative metric: the parser resyncs one byte at a time,
+  # so a corrupted frame can count more than once).
+  - id: dd_crc_bad_count
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
   - id: dd_last_crc_bad_ms
     type: uint32_t
     restore_value: no
@@ -516,13 +545,6 @@ globals:
     restore_value: no
     initial_value: '3'
 
-  # Until the user picks a mode in HA, the emulator MIRRORS the boiler's mode (state adoption,
-  # no forcing at startup). After a choice, the emulator dictates the requested mode.
-  - id: mode_user_set
-    type: bool
-    restore_value: no
-    initial_value: 'false'
-
   # ------------------------------------------------------------
   # Dominus / Zone 1 - "Manage Zone" screen
   # ------------------------------------------------------------
@@ -617,70 +639,13 @@ globals:
     restore_value: yes
     initial_value: '300'
 
-  # v117 last-writer-wins: last value seen on the bus. The capture adopts ONLY when value != last_bus
-  # (a genuine change from the Dominus); on the boiler re-writing the same value it does NOT revert the
-  # HA change -> the slider holds and the boiler reads/propagates it (like a real panel). -32768 sentinel.
-  - id: zone1_setpoint_last_bus
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: zone1_offset_last_bus
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: dominus_comfort_heat_last_bus
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: dominus_eco_heat_last_bus
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: dominus_comfort_cool_last_bus
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: dominus_eco_cool_last_bus
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: dominus_humidity_last_bus
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: dominus_set_flow_last_bus
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: cwu_setpoint_last_bus
-    type: int
-    restore_value: no
-    initial_value: '-32768'
+  # v117 last-writer-wins for Zone 2/3 setpoints: last value seen on the bus (adopt only when it differs).
+  # Zone 1, the Dominus settings, DHW and the mode use lww_guard.h instead.
   - id: zone2_setpoint_last_bus
     type: int
     restore_value: no
     initial_value: '-32768'
   - id: zone3_setpoint_last_bus
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-
-  # v118 last-writer-wins delta-sync: last thermostat target we reconciled with 'raw'. The 1s loop sets
-  # raw = thermostat ONLY when target != thermo_last (user REALLY moved the thermostat); otherwise raw
-  # (slider/bus) is kept and the thermostat is best-effort synced. Initialized in the first loop tick.
-  - id: zone1_thermo_last
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: cwu_thermo_last
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: zone2_thermo_last
-    type: int
-    restore_value: no
-    initial_value: '-32768'
-  - id: zone3_thermo_last
     type: int
     restore_value: no
     initial_value: '-32768'
@@ -993,10 +958,10 @@ number:
       return id(cwu_setpoint_raw) / 10.0f;
     set_action:
       - lambda: |-
+          lww::local_write(lww::DHW_SETPOINT, id(cwu_setpoint_raw), (int) round(x * 10.0f));
           id(cwu_setpoint_raw) = (int) round(x * 10.0f);
           ESP_LOGW("dd_control", "v57 STEROWANIE CWU: zadana %.1f stopni raw=%d. Emulator zwraca to na READ 2095.", x, id(cwu_setpoint_raw));
           id(cwu_setpoint_number).publish_state(x);  // v61: natychmiastowy update suwaka w HA
-          id(cwu_thermostat).make_call().set_target_temperature_low(x).set_target_temperature(x).perform();  // v65: sync termostat
 
   # ------------------------------------------------------------
   # Zone 1 - active setpoint and U03/Offset
@@ -1008,7 +973,7 @@ number:
     unit_of_measurement: "°C"
     min_value: 5
     max_value: 35
-    step: 0.5
+    step: 0.1
     mode: slider
     optimistic: false
     lambda: |-
@@ -1016,10 +981,10 @@ number:
     set_action:
       - lambda: |-
           int raw = (int) round(x * 10.0f);
+          lww::local_write(lww::ZONE1_SETPOINT, id(zone1_setpoint_raw), raw);
           id(zone1_setpoint_raw) = raw;
           ESP_LOGW("dd_control", "v18 anchor-zone-write: zlecono zapis Strefy 1: zadana %.1f°C raw=%d. Czekam na naturalny ACK jako kotwicę.", x, raw);
           id(zone1_setpoint_number).publish_state(x);  // v61: natychmiastowy update suwaka w HA
-          id(co_thermostat).make_call().set_target_temperature_low(x).set_target_temperature(x).perform();  // v65: sync termostat
 
   - platform: template
     name: "Immergas - U03 Heating offset (CH) zone 1"
@@ -1036,6 +1001,7 @@ number:
     set_action:
       - lambda: |-
           int raw = (int) round(x * 10.0f);
+          lww::local_write(lww::ZONE1_OFFSET, id(zone1_offset_raw), raw);
           id(zone1_offset_raw) = raw;
           ESP_LOGW("dd_control", "v18 anchor-zone-write: zlecono zapis U03 / Offset Flow: %.1f raw=%d. Czekam na naturalny ACK jako kotwicę.", x, raw);
           id(zone1_offset_number).publish_state(x);  // v61: natychmiastowy update suwaka w HA
@@ -1060,7 +1026,6 @@ number:
           id(zone2_setpoint_raw) = (int) round(x * 10.0f);
           ESP_LOGW("dd_control", "v96 Strefa 2 zadana %.1f°C raw=%d (placeholder - backend 0x2A do zrobienia)", x, id(zone2_setpoint_raw));
           id(zone2_setpoint_number).publish_state(x);
-          id(co_thermostat_2).make_call().set_target_temperature_low(x).set_target_temperature(x).perform();
 
   - platform: template
     name: "Immergas - CH Setpoint Zone 3"
@@ -1080,7 +1045,6 @@ number:
           id(zone3_setpoint_raw) = (int) round(x * 10.0f);
           ESP_LOGW("dd_control", "v96 Strefa 3 zadana %.1f°C raw=%d (placeholder - backend 0x2B do zrobienia)", x, id(zone3_setpoint_raw));
           id(zone3_setpoint_number).publish_state(x);
-          id(co_thermostat_3).make_call().set_target_temperature_low(x).set_target_temperature(x).perform();
 
   - platform: template
     name: "Immergas - U04 Heating offset (CH) zone 2"
@@ -1130,13 +1094,14 @@ number:
     unit_of_measurement: "°C"
     min_value: 5
     max_value: 35
-    step: 0.5
+    step: 0.1
     mode: slider
     optimistic: false
     lambda: |-
       return id(dominus_comfort_heat_raw) / 10.0f;
     set_action:
       - lambda: |-
+          lww::local_write(lww::COMFORT_HEAT, id(dominus_comfort_heat_raw), (int) round(x * 10.0f));
           id(dominus_comfort_heat_raw) = (int) round(x * 10.0f);
           ESP_LOGW("dd_control", "Zlecono Set Comfort Heat %.1f°C raw=%d", x, id(dominus_comfort_heat_raw));
           id(number_dominus_comfort_heat).publish_state(x);  // v61: natychmiastowy update suwaka
@@ -1148,13 +1113,14 @@ number:
     unit_of_measurement: "°C"
     min_value: 5
     max_value: 35
-    step: 0.5
+    step: 0.1
     mode: slider
     optimistic: false
     lambda: |-
       return id(dominus_eco_heat_raw) / 10.0f;
     set_action:
       - lambda: |-
+          lww::local_write(lww::ECO_HEAT, id(dominus_eco_heat_raw), (int) round(x * 10.0f));
           id(dominus_eco_heat_raw) = (int) round(x * 10.0f);
           ESP_LOGW("dd_control", "Zlecono Set Eco Heat %.1f°C raw=%d", x, id(dominus_eco_heat_raw));
           id(number_dominus_eco_heat).publish_state(x);  // v61: natychmiastowy update suwaka
@@ -1166,13 +1132,14 @@ number:
     unit_of_measurement: "°C"
     min_value: 5
     max_value: 35
-    step: 0.5
+    step: 0.1
     mode: slider
     optimistic: false
     lambda: |-
       return id(dominus_comfort_cool_raw) / 10.0f;
     set_action:
       - lambda: |-
+          lww::local_write(lww::COMFORT_COOL, id(dominus_comfort_cool_raw), (int) round(x * 10.0f));
           id(dominus_comfort_cool_raw) = (int) round(x * 10.0f);
           ESP_LOGW("dd_control", "Zlecono Set Comfort Cool %.1f°C raw=%d", x, id(dominus_comfort_cool_raw));
           id(number_dominus_comfort_cool).publish_state(x);  // v61: natychmiastowy update suwaka
@@ -1184,13 +1151,14 @@ number:
     unit_of_measurement: "°C"
     min_value: 5
     max_value: 35
-    step: 0.5
+    step: 0.1
     mode: slider
     optimistic: false
     lambda: |-
       return id(dominus_eco_cool_raw) / 10.0f;
     set_action:
       - lambda: |-
+          lww::local_write(lww::ECO_COOL, id(dominus_eco_cool_raw), (int) round(x * 10.0f));
           id(dominus_eco_cool_raw) = (int) round(x * 10.0f);
           ESP_LOGW("dd_control", "Zlecono Set Eco Cool %.1f°C raw=%d", x, id(dominus_eco_cool_raw));
           id(number_dominus_eco_cool).publish_state(x);  // v61: natychmiastowy update suwaka
@@ -1209,6 +1177,7 @@ number:
       return id(dominus_humidity_raw);
     set_action:
       - lambda: |-
+          lww::local_write(lww::HUMIDITY, id(dominus_humidity_raw), (int) round(x));
           id(dominus_humidity_raw) = (int) round(x);
           ESP_LOGW("dd_control", "Zlecono Set Umidity %.0f%% raw=%d", x, id(dominus_humidity_raw));
           id(number_dominus_humidity).publish_state(x);  // v61: natychmiastowy update suwaka
@@ -1227,6 +1196,7 @@ number:
       return id(dominus_set_flow_raw) / 10.0f;
     set_action:
       - lambda: |-
+          lww::local_write(lww::SET_FLOW, id(dominus_set_flow_raw), (int) round(x * 10.0f));
           id(dominus_set_flow_raw) = (int) round(x * 10.0f);
           ESP_LOGW("dd_control", "Zlecono Set Flow %.1f°C raw=%d", x, id(dominus_set_flow_raw));
           id(number_dominus_set_flow).publish_state(x);  // v61: natychmiastowy update suwaka
@@ -1758,6 +1728,22 @@ datetime:
     icon: mdi:clock-end
 
 select:
+  # Language of the fault texts (description + "no fault" code). Restored across reboots.
+  - platform: template
+    name: "Immergas - Fault language"
+    id: fault_lang
+    icon: mdi:translate
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_option: "English"
+    options:
+      - "English"
+      - "Italiano"
+    on_value:
+      - component.update: dd_error_text
+      - component.update: dd_error_code_text
+
   # v1.3.0: 0x29 2294 - time programs active (read by the boiler from the panel; zones 2/3 inherit it)
   - platform: template
     name: "Immergas - Time programs Zone 1"
@@ -2460,10 +2446,11 @@ select:
 
           // v57 MODE CONTROL (passive, as Dominus): we set the REQUESTED mode, which
           // the emulator returns on READ 2000. The boiler reads and applies it. No active writing.
-          // mode_user_set=true -> from now the emulator DICTATES the mode, ignoring the boiler's 2000 write-back.
+          // The command stays pending until the boiler confirms it (lww_guard.h); afterwards a mode changed on the
+          // panel is adopted again (before: after the first HA choice the panel could no longer change the mode).
+          lww::local_write(lww::OPERATING_MODE, id(operating_mode_raw), mode);
           id(operating_mode_raw) = mode;
           id(operating_mode_target_raw) = mode;
-          id(mode_user_set) = true;
 
           // v59/v60: natychmiastowe odswiezenie w HA (bez czekania na poll) - select + sensor.
           id(operating_mode_select).publish_state(x);
@@ -2504,6 +2491,110 @@ sensor:
       return id(dd_sniff_changes);
 
   # v1.2.0 boiler -> panel block (0x29) = zone-panel "Information" menu 1:1 (all x0.1 C, published from handle_pdu)
+  # Device and bus health. Uptime drop = reboot; Loop time spikes = main loop blocked; CRC/TX counters: watch them
+  # after any change to the RS485 path.
+  - platform: uptime
+    name: "Immergas - Uptime"
+    entity_category: diagnostic
+    update_interval: 10s
+  - platform: wifi_signal
+    name: "Immergas - WiFi signal"
+    entity_category: diagnostic
+    update_interval: 30s
+  - platform: debug
+    loop_time:
+      name: "Immergas - Loop time"
+      entity_category: diagnostic
+    free:
+      name: "Immergas - Free heap"
+      entity_category: diagnostic
+  - platform: template
+    name: "Immergas - RS485 CRC errors"
+    id: dd_crc_bad_sensor
+    icon: mdi:alert-octagon-outline
+    entity_category: diagnostic
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: |-
+      return (float) id(dd_crc_bad_count);
+  - platform: template
+    name: "Immergas - Dominus TX frames"
+    id: dd_emu33_tx_sensor
+    icon: mdi:upload-network-outline
+    entity_category: diagnostic
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: |-
+      return (float) id(dd_emu_33_ack_count);
+  # Boiler clock (PDU 2300: bits 15-13 weekday 1 = Mon .. 7 = Sun, 12-8 hour, 7-0 minute) minus HA local time,
+  # in minutes (+ ahead / - behind). The zone schedules run on the boiler clock. Resolution 1 min.
+  # Magis Combo V2 fw 5.03 + physical panel: 0 min on 11/10/2026 (summer time), i.e. that clock follows DST.
+  - platform: template
+    name: "Immergas - Boiler clock drift"
+    id: controller_clock_drift
+    icon: mdi:clock-alert-outline
+    entity_category: diagnostic
+    unit_of_measurement: "min"
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: |-
+      uint16_t r = (uint16_t) id(pdu_29_2300_raw);
+      auto now = id(ha_time).now();
+      int wd = (r >> 13) & 0x07, hh = (r >> 8) & 0x1F, mm = r & 0xFF;
+      if (r == 0 || !now.is_valid() || wd < 1 || hh > 23 || mm > 59) return NAN;
+      int boiler = (wd - 1) * 1440 + hh * 60 + mm;                                    // minutes since Monday 00:00
+      int local = ((now.day_of_week + 5) % 7) * 1440 + now.hour * 60 + now.minute;  // ESPTime: 1 = Sunday
+      int d = boiler - local;
+      if (d > 5040) d -= 10080;
+      if (d < -5040) d += 10080;
+      return (float) d;
+  # Space-heating/cooling flow and return = heat-pump water probes TW2/TW1 (0x1E W21/W20), published only while
+  # they measure the system circuit: winter or cooling mode, zone request (2010 bit3), no DHW request (2001 bit0,
+  # 3-way valve on the cylinder) and compressor running. Otherwise they measure the DHW circuit or stagnant water
+  # -> unknown (gap in the HA graph). TW2 verified against the boiler display D20 (Magis Combo V2, fw 5.03).
+  - platform: template
+    name: "Immergas - System flow temperature"
+    id: system_flow_temp
+    icon: mdi:thermometer-chevron-up
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      int m = id(operating_mode_reported);
+      bool space = (m == 2 || m == 3) && (id(dd_zone1_status_raw) & 0x08) != 0;
+      if (!space || id(piec_zadanie_cwu_oczek).state || !id(pc_sprezarka_pracuje).state) return NAN;
+      return id(sniff_1e_w_21).state;
+  - platform: template
+    name: "Immergas - System return temperature"
+    id: system_return_temp
+    icon: mdi:thermometer-chevron-down
+    device_class: temperature
+    state_class: measurement
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      int m = id(operating_mode_reported);
+      bool space = (m == 2 || m == 3) && (id(dd_zone1_status_raw) & 0x08) != 0;
+      if (!space || id(piec_zadanie_cwu_oczek).state || !id(pc_sprezarka_pracuje).state) return NAN;
+      return id(sniff_1e_w_20).state;
+  - platform: template
+    name: "Immergas - System delta T"
+    id: system_delta_t
+    icon: mdi:delta
+    state_class: measurement
+    unit_of_measurement: "K"
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      int m = id(operating_mode_reported);
+      bool space = (m == 2 || m == 3) && (id(dd_zone1_status_raw) & 0x08) != 0;
+      if (!space || id(piec_zadanie_cwu_oczek).state || !id(pc_sprezarka_pracuje).state) return NAN;
+      return id(sniff_1e_w_21).state - id(sniff_1e_w_20).state;  // > 0 heating, < 0 cooling
   # 3003 = heating-curve flow setpoint (0 without demand)
   - platform: template
     name: "Immergas - D04 Calculated flow setpoint"
@@ -3064,43 +3155,11 @@ sensor:
       return id(pdu_2b_version_raw) / 100.0f;
     update_interval: 30s
 
-  # v65: temp sensors for the thermostats (current temperature). Internal - climate only.
-  - platform: template
-    id: co_climate_temp
-    name: "co_climate_temp"
-    internal: true
-    unit_of_measurement: "°C"
-    lambda: |-
-      return id(ha_room_temp_raw) / 10.0f;   // room temp fed to the boiler (average from HA)
-    update_interval: 5s
-  - platform: template
-    id: co_climate_temp_2
-    name: "co_climate_temp_2"
-    internal: true
-    unit_of_measurement: "°C"
-    lambda: |-
-      if (!id(dd_emulate_2a_diag)) return NAN;
-      return id(ha_room_temp_2_raw) / 10.0f;
-    update_interval: 5s
-  - platform: template
-    id: co_climate_temp_3
-    name: "co_climate_temp_3"
-    internal: true
-    unit_of_measurement: "°C"
-    lambda: |-
-      if (!id(dd_emulate_2b_diag)) return NAN;
-      return id(ha_room_temp_3_raw) / 10.0f;
-    update_interval: 5s
-  - platform: template
-    id: cwu_climate_temp
-    name: "cwu_climate_temp"
-    internal: true
-    unit_of_measurement: "°C"
-    lambda: |-
-      return id(dhw_temp_raw) > 0 ? id(dhw_temp_raw) / 10.0f : 45.0f;  // real DHW temp (3016)
-    update_interval: 5s
-
 text_sensor:
+  - platform: debug
+    reset_reason:
+      name: "Immergas - Reset reason"
+      entity_category: diagnostic
 
   # v1.2.0
   - platform: template
@@ -3191,7 +3250,7 @@ text_sensor:
     update_interval: 10s
     lambda: |-
       int c = id(dd_err_code);
-      if (c == 0) return std::string("None");
+      if (c == 0) return std::string(id(fault_lang).active_index().value_or(0) == 1 ? "Nessuna" : "None");
       char b[8];
       snprintf(b, sizeof(b), "E%02d", c);
       return std::string(b);
@@ -3240,8 +3299,9 @@ text_sensor:
       return std::string("—");
 
 
-  # v71: boiler fault description (English from Dominus anomalies[]). State = 'title. cause -> action'
-  # (front-loaded: the dashboard shows the title, more-info shows the rest; cap 250 = HA limit 255).
+  # v71: boiler fault description from the Dominus app anomalies[], English or Italian (select "Fault
+  # language"). State = 'title. description -> action', fitted to HA's 255-char limit by shortening the
+  # description, so title and action survive (faults_i18n.h).
   - platform: template
     name: "Immergas - Boiler fault (description)"
     id: dd_error_text
@@ -3249,133 +3309,8 @@ text_sensor:
     entity_category: diagnostic
     update_interval: 10s
     lambda: |-
-      int c = id(dd_err_code);
-      if (c == 0) return std::string("No faults");
-      std::string t;
-      switch (c) {
-        case 0: t = "SYSTEM OK. No anomaly -> No action required"; break;
-        case 1: t = "No ignition block. In the event of request of room central heating or domestic hot water production, the boiler does not switch on within the preset time. Upon appliance commissioning or after extended downtime, it may be necessary to eliminate the block. -> Press the Reset button"; break;
-        case 2: t = "Safety thermostat block (over-temperature). During normal operation, if a fault causes excessive overheating internally, the boiler goes into overheating block. -> Press the Reset button"; break;
-        case 3: t = "Flue safety thermostat block. During normal operation, if a fault causes excessive flue gas overheating, the boiler blocks. (Nike versions)/ Wrong P.14 parameter configuration (Star version) -> Press the Reset button (Nike versions)/ Correctly configure the P.14 parameter. Press the Reset button if required (Star versions)"; break;
-        case 4: t = "Contacts resistance block. The P.C.B. detects an anomaly on the gas valve supply. Check the connection. (the anomaly is detected and displayed only in the event of a request). -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 5: t = "Flow probe anomaly. The P.C.B. detects an anomaly on the flow NTC probe. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 6: t = "Domestic hot water probe anomaly. The P.C.B. detects an anomaly on the domestic hot water NTC probe. -> In this case the boiler continues to produce domestic hot water but not with optimal performance. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 8: t = "Maximum N° of reset. Number of allowed resets that have already performed. -> Attention: the anomaly can be reset 5 times consecutively, after which the function in inhibited for at least one hour. One attempt is gained every hour for a maximum of 5 attempts. By switching the appliance on and off again, the 5 attempts are re-acquired."; break;
-        case 10: t = "Insufficient system pressure. Water pressure inside the central heating circuit that is sufficient to guarantee the correct operation of the boiler is not detected. -> Check on the boiler pressure gauge that the system pressure is between 1÷1.2 bar and restore the correct pressure if necessary."; break;
-        case 11: t = "Flue pressure switch anomaly. If normal conditions are restored the boiler restarts without having to be reset -> If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)"; break;
-        case 12: t = "Storage tank probe anomaly. If the P.C.B. detects a fault in the boiler probe, the boiler cannot produce DHW and signals a fault. -> The boiler does not satisfy the DHW production requests. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 13: t = "Air/flue gas flow-meter out of range. With fan stopped, the air/flue gas controller reads an excessively high signal (pressure switch contacts stuck) -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
-        case 15: t = "Configuration error. If the P.C.B. detects an anomaly or incongruity on the electric wiring, the boiler will not start. -> If normal conditions are restored the boiler restarts without having to be reset. Check that the boiler is configured correctly. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 16: t = "Fan anomaly. This occurs if the fan has a mechanical or electrical fault. -> Press the Reset button. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 17: t = "Incorrect fan speed. Number of fan revolutions incorrect -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
-        case 20: t = "Parasite flame block. This occurs in the event of a leak on the detection circuit or anomaly in the flame control unit. -> Press the Reset button. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 23: t = "Return probe anomaly. The P.C.B. detects an anomaly on the flow NTC probe. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 24: t = "Push button control panel anomaly. The P.C.B. detects an anomaly on the pushbutton panel. -> If normal conditions are restored the boiler restarts without having to be reset. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 25: t = "Flue probe block / CRC block (TERA). High flue gas gradient, probable circulator block or no water / memory corrupted -> Press the Reset button"; break;
-        case 27: t = "Insufficient circulation. X -> Press the Reset button"; break;
-        case 28: t = "Domestic hot water leakage. Check that all domestic hot water system cocks are closed and are not leaking and also check that there are no leaks in the system. Once good conditions are restored in the domestic hot water system, the boiler returns to normal operation -> If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)"; break;
-        case 29: t = "Flue probe anomaly. The P.C.B. detects an anomaly on the flue gas probe. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 31: t = "Loss of communication with the CARV2. This occurs if an incompatible remote control is connected, or if communication between the boiler and CARV2 is lost. -> Power cycle the boiler. If the Remote Control is still not detected on re-starting the boiler will switch to local operating mode, i.e. using the controls on the control panel. In this case the ''Central Heating'' mode cannot be activated."; break;
-        case 32: t = "Zone 2 low temperature probe anomaly. If the board detects an anomaly on the zone 2 low temperature probe, the system cannot work in the affected area -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
-        case 33: t = "Zone 3 low temperature probe anomaly. If the board detects an anomaly on the zone 2 low temperature probe, the system cannot work in the affected area -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
-        case 36: t = "IMG Bus communication loss. Communication between the various components is interrupted due to an anomaly on the boiler control unit, on the zone control unit or on the IMG Bus. -> The boiler does not satisfy the room heating requests."; break;
-        case 37: t = "Low power supply voltage. This occurs when the power supply voltage is lower than the allowed limits for the correct boiler operation. -> If normal conditions are restored the boiler restarts without having to be reset."; break;
-        case 38: t = "Loss of flame signal. This occurs when the boiler is ignited correctly and the burner flame switches off unexpectedly; a new attempt at ignition is performed and if normal conditions are restored, the boiler does not have to be reset. -> If normal conditions are restored the boiler restarts without having to be reset."; break;
-        case 39: t = "Solar collector probe anomaly. If the board detects an anomaly on the solar collector probe, the boiler continues to work regularly without the intake of solar energy for heating the DHW as the solar pump stops working -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
-        case 40: t = "Solar storage tank probe anomaly. If the board detects a fault on the solar storage tank probe, the boiler continues to work regularly without the intake of solar energy for heating the DHW as the solar pump stops working. -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
-        case 41: t = "High temperature on the solar collector. This occurs when the temperature of the solar collector exceeds the maximum limit set -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
-        case 42: t = "High temperature on the solar storage tank. This occurs when the temperature of the water in the solar storage tank exceeds the maximum limit set. -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
-        case 43: t = "Block due to loss of flame signal. This occurs if the ''Flame signal loss'' error occurs many times in a row within a preset period. -> Press the Reset button, before restarting, the boiler will run a post-ventilation cycle."; break;
-        case 44: t = "Block for exceeding the maximum accumulated time, close gas valve opening. This occurs if the gas valve remains open for longer than required for normal operation, without the boiler switching on. -> Press the Reset button."; break;
-        case 45: t = "dT high. The boiler detects a sudden, unexpected increase in the dT between the flow probe and the system return probe. -> The power of the burner is limited to prevent damage to the condensation module and once the right dT is restored, the boiler resumes regular operation. Make sure there is water circulating in the boiler, that the pump is configured according to system requirements and that the return probe works properly."; break;
-        case 46: t = "Low temperature thermostat intervention / Incorrect wiring/board configuration. During normal operation, if an anomaly causes excessive overheating of the flow temperature in low temperature conditions, the boiler shuts down. / Wiring error or use of incorrect spare board -> In this case, after cooling down, it is possible to reset the thermostat (see relative instruction sheet). / If the blockage or anomaly persists it is necessary to call an authorised company (e.g. Immergas Technical Assistance Service)."; break;
-        case 47: t = "Burner power limitation. Should flue high temperature be detected, the boiler reduces power supplied so as not to damage it. -> If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 48: t = "System side flow probe anomaly. In the event that the system side flow probe is not connected or is faulty, the anomaly is indicated -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
-        case 49: t = "High temperature block on return probe. This occurs when the heat exchanger return circuit reaches an excessively high temperature -> Make sure that water circulates properly in the boiler and that the three-way valve works properly."; break;
-        case 50: t = "External probe anomaly. In the event that the external probe is not connected or is faulty, the anomaly is indicated -> Check the external probe connection. The system keeps working"; break;
-        case 51: t = "CAR Wireless communication failure. If there is no communication between the boiler and Wireless version CAR, an anomaly is signalled. From this moment, it is only possible to control the system by means of the control panel of the boiler itself. -> Check operation of the Wireless CAR, check the battery charge (refer to the relative instructions booklet)."; break;
-        case 54: t = "Puffer probe anomaly. In the event that the puffer probe is not connected or is faulty, the anomaly is indicated -> The puffer mode is disabled"; break;
-        case 55: t = "Zone 1 flow temperature probe anomaly. If the board detects an anomaly on the zone 1 low temperature probe, the system cannot work in the affected area. -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
-        case 58: t = "Audax anomaly. Anomaly on the Audax heat pump, check the type of anomaly directly on the heat pump display -> The heat pump does not satisfy the room heating and cooling requests; once the connections are restored, switch the system on and off again"; break;
-        case 59: t = "Main supply voltage frequency block. The P.C.B. detects a main supply voltage frequency anomaly. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 60: t = "Anomaly pump blocked. The pump is stopped due to one of the following causes: impeller blocked, electrical fault. -> Try to unblock the pump as described in the relative section. If normal conditions are restored the boiler restarts without having to be reset."; break;
-        case 61: t = "Air in circulator pump. Air is detected inside the pump; the pump cannot work. -> Vent the pump and the central heating circuit. If normal conditions are restored the boiler restarts without having to be reset."; break;
-        case 62: t = "Complete calibration required. Missing calibration is detected by the P.C.B. It may occur in the event the P.C.B. is replaced or if the parameters are altered in the air / gas section, thus requiring ''complete calibration''. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 63: t = "System return probe anomaly. In the event that the return probe is not connected or is faulty, the anomaly is indicated -> The boiler continues to operate without any integration from the external systems connected"; break;
-        case 67: t = "Solar system pressure switch anomaly. Due to a pressure drop in the solar circuit, the pressure switch blocks the operation of the thermal solar circuit -> Check on the pressure gauge of the solar circulation unit that the pressure is at the correct value"; break;
-        case 70: t = "Return/flow probe exchange. X -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 72: t = "Fast calibration required. The P.C.B. detects that some parameters have been altered, thus requiring ''fast calibration''. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 73: t = "High flow probe and safety flow probe deviation detected. The P.C.B. detects an anomaly in the temperature readings of the NTC flow probes; the causes may be: faulty probe, incorrect position, poor system circulation, or clogging of the water side primary heat exchanger. -> If normal conditions are restored the boiler restarts without having to be reset."; break;
-        case 74: t = "Safety flow probe anomaly. The P.C.B. detects an anomaly on the NTC safety flow probe. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 75: t = "Return and/or flow probe malfunction. X -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 76: t = "Return and/or flow probes temperature drift. X -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 77: t = "Combustion control anomaly. Out of range current is detected on the gas valve. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 78: t = "Combustion control anomaly. High current on the gas valve is detected. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 79: t = "Combustion control anomaly. Reduced current on the gas valve is detected. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 80: t = "P.C.B. malfunction block. This occurs in the event of malfunctions of the P.C.B. that controls the valve. -> Press the Reset button"; break;
-        case 84: t = "Combustion anomaly - power reduction in progress. A low supply pressure is detected on the gas line. As a result the appliance power is limited and the anomaly is reported. -> If normal conditions are restored the boiler restarts without having to be reset"; break;
-        case 85: t = "Afterburner problem block. Flame present for about after gas valve closing -> Press the Reset button. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 87: t = "Block - gas valve control. A malfunction of one of the components that controls the gas valve has been detected. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 88: t = "Block - gas valve control. A malfunction of one of the components that controls the gas valve has been detected. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 89: t = "Combustion signal unstable. The flame is unstable due to: presence of flue gas recirculation, wind, unstable gas pressure, unstable fan speed, or due to system malfunction. -> The boiler keeps working."; break;
-        case 90: t = "Combustion signal beyond limit. The combustion signal is beyond the adjustment range required for an extended period of time. -> The boiler keeps working."; break;
-        case 91: t = "Incorrect ignition block. The P.C.B. has exhausted all possible actions in order to obtain optimal ignition of the burner. -> Press the Reset button"; break;
-        case 92: t = "Fan revs correction limit. The system has exhausted all possible corrections of the number of fan revs. -> The boiler keeps working."; break;
-        case 93: t = "Combustion signal beyond limit. The combustion signal is beyond the adjustment range required for an extended period of time. -> The boiler keeps working."; break;
-        case 94: t = "Combustion anomaly. A problem is detected on the combustion control, which may be due to: gas low pressure, flue recirculation, defective gas valve or P.C.B.. -> If normal conditions are restored the boiler restarts without having to be reset."; break;
-        case 95: t = "Combustion signal discontinuous. The system detects a discontinuous combustion signal. -> The boiler keeps working."; break;
-        case 96: t = "Clogged flue. This occurs in the event an obstruction is detected in the flue system. -> The boiler does not start. If the shutdown or fault persists, contact an authorised company (e.g. Authorised Technical After-Sales Service)."; break;
-        case 98: t = "Block - maximum no. of software errors. The maximum number of software errors possible has been reached. -> Press the Reset button"; break;
-        case 99: t = "General block. A boiler anomaly has been detected. -> Press the Reset button"; break;
-        case 101: t = "Audax off-line alarm. In the event of communication failure, incorrect connection or heat pump switched off, the boiler electronics do not detect the heat pump -> The heat pump does not satisfy the room heating and cooling requests; once the connections are restored, switch the system on and off again"; break;
-        case 102: t = "Zone 1 off-line expansion alarm. Communication anomaly with zone 1 -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
-        case 103: t = "Zone 2 off-line expansion alarm. Communication anomaly with zone 2 -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
-        case 104: t = "Zone 3 off-line expansion alarm. Communication anomaly with zone 3 -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
-        case 106: t = "DHW probe alarm. The board detects an anomaly on the storage tank probe -> The system cannot produce domestic hot water with the heat pump. The production of the domestic hot water is guaranteed by the boiler"; break;
-        case 120: t = "Zone 1 dehumidification high set alarm. The cooling flow set calculated for dehumidification exceeds the limit set in zone 1 -> The calculated flow set exceeds the limit permitted by the dehumidifier. Cool the room and wait until the dew temperature returns to acceptable values"; break;
-        case 121: t = "Zone 1 device offline alarm. Communication with the zone control is not detected. It is not possible to perform the zone temperature control -> Check that the remote control is switched on"; break;
-        case 122: t = "Zone 2 device offline alarm. Communication with the zone control is not detected. It is not possible to perform the zone temperature control -> Check that the remote control is switched on"; break;
-        case 123: t = "Zone 3 device offline alarm. Communication with the zone control is not detected. It is not possible to perform the zone temperature control -> Check that the remote control is switched on"; break;
-        case 125: t = "Zone 1 room temperature probe anomaly. Anomaly on the room temperature probe of zone 1 (optional). It is not possible to perform the zone temperature control -> In addition to the temperature, the dew point is not calculated for the zone either"; break;
-        case 126: t = "Zone 2 room temperature probe anomaly. Anomaly on the room temperature probe of zone 2 (optional.) It is not possible to perform the zone temperature control -> In addition to the temperature, the dew point is not calculated for the zone either"; break;
-        case 127: t = "Zone 3 room temperature probe anomaly. Anomaly on the room temperature probe of zone 3 (optional). It is not possible to perform the zone temperature control -> In addition to the temperature, the dew point is not calculated for the zone either"; break;
-        case 129: t = "Zone 1 humidity probe anomaly. Anomaly on the humidity probe of zone 1 (optional). Zone humidity cannot be checked -> In addition to the humidity, the dew point is not calculated for the zone either"; break;
-        case 130: t = "Zone 2 humidity probe anomaly. Anomaly on the zone 2 humidity probe (optional). Zone humidity cannot be checked -> In addition to the humidity, the dew point is not calculated for the zone either"; break;
-        case 131: t = "Zone 3 humidity probe anomaly. Anomaly on the zone 3 humidity probe (optional). Zone humidity cannot be checked -> In addition to the humidity, the dew point is not calculated for the zone either"; break;
-        case 132: t = "Zone 2 dehumidification high set alarm. The cooling flow set calculated for dehumidification exceeds the limit set in zone 2 -> The calculated flow set exceeds the limit permitted by the dehumidifier. Cool the room and wait until the dew temperature returns to acceptable values"; break;
-        case 133: t = "Zone 1 dehumidifier fault alarm. Anomaly coming from the dehumidifier (optional) in zone 1 -> The system does not dehumidify in the relative zone"; break;
-        case 134: t = "Zone 2 dehumidifier fault alarm. Anomaly coming from the dehumidifier (optional) in zone 2 -> The system does not dehumidify in the relative zone"; break;
-        case 135: t = "Zone 3 dehumidifier fault alarm. Anomaly coming from the dehumidifier (optional) in zone 3 -> The system does not dehumidify in the relative zone"; break;
-        case 137: t = "Reset system alarm – Restart the system. When the default parameters are restored, the system needs to be restarted -> Turn the system off and on"; break;
-        case 138: t = "Screed heater in progress"; break;
-        case 139: t = "Deaeration in progress"; break;
-        case 177: t = "DHW maximum time alarm. The domestic hot water production requirements are not met within the preset time (5 hours) -> The system continues to operate with non-optimal performance"; break;
-        case 178: t = "Anti-legionella cycle not successful. The anti-legionella cycle is performed unsuccessfully within the preset time (3 hours) -> Press the Reset button"; break;
-        case 179: t = "Liquid probe anomaly. The board detects an anomaly on the liquid phase probe -> The system does not start. Call an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
-        case 181: t = "Remote Control communication failure zone 2. This happens when an incompatible remote control is connected or when communication between the hydronic module and the CARV2 of the second zone is lost -> Disconnect and reconnect the power to the hydronic module. If the Remote Control is still not detected at restart, the system will switch to local operating mode, i.e. using the controls on the control panel. In this case the “Central Heating”, function cannot be activated"; break;
-        case 182: t = "Condensing unit alarm. An anomaly is signalled on the condensing unit -> The system does not work, see the anomaly on the condensing unit and its instructions booklet"; break;
-        case 183: t = "Condensing unit alarm in test mode. A signal notifies that the condensing unit is in test mode -> During this time, room heating/air conditioning and domestic hot water production requirements cannot be met"; break;
-        case 184: t = "Communication with outdoor unit timeout alarm. A signal notifies an anomaly due to a communication problem between the indoor unit and the condensing unit -> Have the electrical connection between the units checked"; break;
-        case 185: t = "Safety module communication alarm. Communication anomaly between P.C.B. and ignition board -> Have the electrical connection between the components checked"; break;
-        case 186: t = "Igniter high voltage anomaly. An anomaly appears on the ignition board -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
-        case 187: t = "Condensing unit return probe alarm. The board detects an anomaly on the heat pump return NTC probe -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
-        case 188: t = "Request out of operating range. A heating or cooling request is made with an outdoor temperature exceeding the operating limits -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
-        case 189: t = "Communication with communication board timeout alarm. If communication between the printed circuit boards is lost, an anomaly is signalled -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
-        case 191: t = "RF communication failure towards CAR v2 RF zone 2. If there is no communication between the indoor unit and Wireless version CAR of the second zone, an anomaly is signalled. From this moment onwards, it is only possible to control the system by means of the indoor unit control panel -> Check operation of the Wireless CAR, check the battery charge (refer to the relative instructions booklet)"; break;
-        case 192: t = "Condensing unit flow probe anomaly. The board detects an anomaly on the NTC heat pump flow probe -> If the block or anomaly persists, contact an authorised company (e.g. Immergas Technical After-Sales Service)."; break;
-        case 193: t = "Appliance in Test mode. A signal notifies that the appliance is in test mode -> The system continues operating properly"; break;
-        case 194: t = "Audax Pro disabled. A signal notifies that the condensing unit has been disabled through the appropriate input in the terminal board -> The system continues operating properly"; break;
-        case 195: t = "Liquid phase low temp. anomaly. An excessively low temperature is detected in the liquid phase -> Check that the cooling circuit is working properly"; break;
-        case 196: t = "High flow temp. block. An excessively high temperature is detected on the heat pump flow circuit -> Check that the cooling circuit is working properly"; break;
-        default: t = "General unrecognised anomaly"; break;
-      }
-      std::string s = t;
-      if (s.size() > 250) {
-        size_t cut = s.rfind(' ', 250);
-        if (cut == std::string::npos || cut < 200) cut = 250;
-        s = s.substr(0, cut) + "...";
-      }
-      return s;
+      bool italian = id(fault_lang).active_index().value_or(0) == 1;
+      return faults::describe(id(dd_err_code), italian);
 
   # v106: removed the "Atom operating mode" entity (diagnostic emulation-mode text - unnecessary).
   - platform: template
@@ -3398,6 +3333,13 @@ text_sensor:
 # v66: online/offline status of emulated devices. "Online" = the boiler READS that address (03/04)
 # within the last 30 s = it accepted us. When it stops reading (or emulation is off) -> offline.
 binary_sensor:
+  # Zone 1 heating/cooling request = PDU 2010 bit3 (verified: 2010 = 12 with heating active).
+  - platform: template
+    name: "Immergas - Zone 1 heating request"
+    id: bs_zone1_heat_request
+    device_class: heat
+    lambda: |-
+      return (id(dd_zone1_status_raw) & 0x08) != 0;
   # v1.3.0: 0x29 W 2001 status flags (bit 0 = DHW request pending, bit 2 = active boiler fault/anomaly)
   - platform: template
     name: "Immergas - D09 DHW request pending"
@@ -3487,154 +3429,200 @@ binary_sensor:
       if (id(dd_last_1e_read_ms) == 0) return false;
       return (millis() - id(dd_last_1e_read_ms)) < 30000;
 
-# v65: climate THERMOSTATS. The boiler does the real regulation - here just target <-> setpoint (raw)
-# plus a view of the current value. The heat/idle indicator is cosmetic (heat/idle is logger only).
+# Climate entities backed by the bus (components/bus_climate). The boiler does the real regulation: state is
+# what the boiler reports (setpoint 2015, mode 2000, phase/request 2010), there is no local control loop.
+# Commands from HA go through the existing number/select entities, i.e. the same write path as the sliders.
+# Replaces the v65 "thermostat" climates and the v118 1 s delta-sync loop: a thermostat platform keeps its own
+# target and runs its own heat/idle logic, so it could disagree with the boiler and needed a sync loop.
+# Presets: Comfort/Eco from the phase the boiler declares in 2010 (bit6 Comfort, bit7 Eco, bit2 Manual).
+# Manual (temporary override, not tied to a Comfort/Eco level) = HA "no preset" (NONE).
+# Choosing Comfort/Eco writes the matching level (heat or cool, by mode) into the zone setpoint: during an Eco
+# time slot, Comfort makes the boiler switch to Manual - that is the boiler's behaviour, shown as is.
 climate:
-  - platform: thermostat
+  - platform: bus_climate
     name: "Immergas - Thermostat Zone 1 (CH)"
     id: co_thermostat
-    sensor: co_climate_temp
-    min_idle_time: 0s
-    min_heating_off_time: 0s
-    min_heating_run_time: 0s
+    icon: mdi:radiator
+    update_interval: 2s
+    supported_modes: [HEAT, COOL]
     visual:
       min_temperature: 5
       max_temperature: 35
-      temperature_step: 0.5
-    default_preset: Dom
-    preset:
-      - name: Dom
-        default_target_temperature_low: 21
-    heat_action:
-      - logger.log: "CO: ponizej zadanej (piec grzeje)"
-    idle_action:
-      - logger.log: "CO: zadana osiagnieta"
+      temperature_step:
+        target_temperature: 0.1
+        current_temperature: 0.1
+    current_temperature_lambda: |-
+      if (id(ha_room_temp_raw) <= 0) return NAN;
+      return id(ha_room_temp_raw) / 10.0f;
+    current_humidity_lambda: |-
+      if (id(ha_room_humidity_raw) <= 0) return NAN;
+      return (float) id(ha_room_humidity_raw);
+    target_temperature_lambda: |-
+      return id(zone1_setpoint_raw) / 10.0f;
+    mode_lambda: |-
+      switch (id(operating_mode_reported)) {
+        case 3: return climate::CLIMATE_MODE_HEAT;
+        case 2: return climate::CLIMATE_MODE_COOL;
+        default: return climate::CLIMATE_MODE_OFF;
+      }
+    action_lambda: |-
+      int m = id(operating_mode_reported);
+      if (m != 2 && m != 3) return climate::CLIMATE_ACTION_OFF;
+      if ((id(dd_zone1_status_raw) & 0x08) == 0) return climate::CLIMATE_ACTION_IDLE;  // 2010 bit3 = request
+      return (m == 3) ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_COOLING;
+    set_target_temperature_action:
+      - lambda: |-
+          id(zone1_setpoint_number).make_call().set_value(x).perform();
+    supported_presets: [COMFORT, ECO, NONE]
+    preset_lambda: |-
+      int st = id(dd_zone1_status_raw) & 0xFF;
+      if (st & 0x40) return std::string("COMFORT");
+      if (st & 0x80) return std::string("ECO");
+      if (st & 0x04) return std::string("NONE");
+      return {};
+    set_preset_action:
+      - lambda: |-
+          // NONE (= Manual) is a state, not a command -> ignored.
+          bool cool = (id(operating_mode_reported) == 2);
+          int raw;
+          if (x == "COMFORT") raw = cool ? id(dominus_comfort_cool_raw) : id(dominus_comfort_heat_raw);
+          else if (x == "ECO") raw = cool ? id(dominus_eco_cool_raw) : id(dominus_eco_heat_raw);
+          else return;
+          ESP_LOGI("climate_z1", "Preset %s (%s) -> setpoint %.1f", x.c_str(), cool ? "cooling" : "heating", raw / 10.0f);
+          id(zone1_setpoint_number).make_call().set_value(raw / 10.0f).perform();
+    set_mode_action:
+      - lambda: |-
+          // OFF = Summer (DHW only): heating/cooling off, hot water kept. Standby stays on the mode select.
+          const char *opt = "Summer DHW";
+          if (x == climate::CLIMATE_MODE_HEAT) opt = "Winter CH+DHW";
+          else if (x == climate::CLIMATE_MODE_COOL) opt = "Cooling";
+          id(operating_mode_select).make_call().set_option(opt).perform();
 
-  - platform: thermostat
+  - platform: bus_climate
     name: "Immergas - DHW Thermostat"
     id: cwu_thermostat
-    sensor: cwu_climate_temp
-    min_idle_time: 0s
-    min_heating_off_time: 0s
-    min_heating_run_time: 0s
+    icon: mdi:water-boiler
+    update_interval: 2s
+    supported_modes: [HEAT]
     visual:
       min_temperature: 30
       max_temperature: 60
-      temperature_step: 0.5
-    default_preset: Dom
-    preset:
-      - name: Dom
-        default_target_temperature_low: 49
-    heat_action:
-      - logger.log: "CWU: ponizej zadanej"
-    idle_action:
-      - logger.log: "CWU: zadana osiagnieta"
+      temperature_step:
+        target_temperature: 0.5
+        current_temperature: 0.1
+    current_temperature_lambda: |-
+      if (id(dhw_temp_raw) <= 0) return NAN;
+      return id(dhw_temp_raw) / 10.0f;
+    target_temperature_lambda: |-
+      return id(cwu_setpoint_raw) / 10.0f;
+    mode_lambda: |-
+      // DHW is active in every mode except Standby. Not switchable from here (no set_mode_action):
+      // turning DHW off means Standby, which also stops heating -> use the mode select.
+      return (id(operating_mode_reported) == 0) ? climate::CLIMATE_MODE_OFF : climate::CLIMATE_MODE_HEAT;
+    action_lambda: |-
+      if (id(operating_mode_reported) == 0) return climate::CLIMATE_ACTION_OFF;
+      return id(piec_zadanie_cwu_oczek).state ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_IDLE;  // 2001 bit0
+    set_target_temperature_action:
+      - lambda: |-
+          id(cwu_setpoint_number).make_call().set_value(x).perform();
 
-  # v94/v108: CH thermostats for Zone 2 and 3 (restored). current temp from ha_room_temp_2/3_raw (NAN when
-  # zone OFF - v105); target = slider. climate can't be made "unavailable" in ESPHome - target may
-  # show a value when the zone is OFF (platform limitation, accepted).
-  - platform: thermostat
+  # Zone 2/3: same model. Current temperature = the zone's room value (NAN when that zone's panel emulation
+  # is OFF); phase/request from 2010 written to 0x2A/0x2B (multi-zone setups only, A13).
+  - platform: bus_climate
     name: "Immergas - Thermostat Zone 2 (CH)"
     id: co_thermostat_2
-    sensor: co_climate_temp_2
-    min_idle_time: 0s
-    min_heating_off_time: 0s
-    min_heating_run_time: 0s
+    icon: mdi:radiator
+    update_interval: 2s
+    supported_modes: [HEAT, COOL]
     visual:
       min_temperature: 5
       max_temperature: 35
-      temperature_step: 0.5
-    default_preset: Dom
-    preset:
-      - name: Dom
-        default_target_temperature_low: 21
-    heat_action:
-      - logger.log: "CO Strefa 2: ponizej zadanej"
-    idle_action:
-      - logger.log: "CO Strefa 2: zadana osiagnieta"
+      temperature_step:
+        target_temperature: 0.5
+        current_temperature: 0.1
+    current_temperature_lambda: |-
+      if (!id(dd_emulate_2a_diag) || id(ha_room_temp_2_raw) <= 0) return NAN;
+      return id(ha_room_temp_2_raw) / 10.0f;
+    target_temperature_lambda: |-
+      return id(zone2_setpoint_raw) / 10.0f;
+    mode_lambda: |-
+      switch (id(operating_mode_reported)) {
+        case 3: return climate::CLIMATE_MODE_HEAT;
+        case 2: return climate::CLIMATE_MODE_COOL;
+        default: return climate::CLIMATE_MODE_OFF;
+      }
+    action_lambda: |-
+      int m = id(operating_mode_reported);
+      if (m != 2 && m != 3) return climate::CLIMATE_ACTION_OFF;
+      if ((id(dd_zone2_status_raw) & 0x08) == 0) return climate::CLIMATE_ACTION_IDLE;
+      return (m == 3) ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_COOLING;
+    set_target_temperature_action:
+      - lambda: |-
+          id(zone2_setpoint_number).make_call().set_value(x).perform();
+    supported_presets: [COMFORT, ECO, NONE]
+    preset_lambda: |-
+      int st = id(dd_zone2_status_raw) & 0xFF;
+      if (st & 0x40) return std::string("COMFORT");
+      if (st & 0x80) return std::string("ECO");
+      if (st & 0x04) return std::string("NONE");
+      return {};
+    set_preset_action:
+      - lambda: |-
+          bool cool = (id(operating_mode_reported) == 2);
+          int raw;
+          if (x == "COMFORT") raw = cool ? id(dominus_comfort_cool_z2_raw) : id(dominus_comfort_heat_z2_raw);
+          else if (x == "ECO") raw = cool ? id(dominus_eco_cool_z2_raw) : id(dominus_eco_heat_z2_raw);
+          else return;
+          id(zone2_setpoint_number).make_call().set_value(raw / 10.0f).perform();
 
-  - platform: thermostat
+  - platform: bus_climate
     name: "Immergas - Thermostat Zone 3 (CH)"
     id: co_thermostat_3
-    sensor: co_climate_temp_3
-    min_idle_time: 0s
-    min_heating_off_time: 0s
-    min_heating_run_time: 0s
+    icon: mdi:radiator
+    update_interval: 2s
+    supported_modes: [HEAT, COOL]
     visual:
       min_temperature: 5
       max_temperature: 35
-      temperature_step: 0.5
-    default_preset: Dom
-    preset:
-      - name: Dom
-        default_target_temperature_low: 21
-    heat_action:
-      - logger.log: "CO Strefa 3: ponizej zadanej"
-    idle_action:
-      - logger.log: "CO Strefa 3: zadana osiagnieta"
+      temperature_step:
+        target_temperature: 0.5
+        current_temperature: 0.1
+    current_temperature_lambda: |-
+      if (!id(dd_emulate_2b_diag) || id(ha_room_temp_3_raw) <= 0) return NAN;
+      return id(ha_room_temp_3_raw) / 10.0f;
+    target_temperature_lambda: |-
+      return id(zone3_setpoint_raw) / 10.0f;
+    mode_lambda: |-
+      switch (id(operating_mode_reported)) {
+        case 3: return climate::CLIMATE_MODE_HEAT;
+        case 2: return climate::CLIMATE_MODE_COOL;
+        default: return climate::CLIMATE_MODE_OFF;
+      }
+    action_lambda: |-
+      int m = id(operating_mode_reported);
+      if (m != 2 && m != 3) return climate::CLIMATE_ACTION_OFF;
+      if ((id(dd_zone3_status_raw) & 0x08) == 0) return climate::CLIMATE_ACTION_IDLE;
+      return (m == 3) ? climate::CLIMATE_ACTION_HEATING : climate::CLIMATE_ACTION_COOLING;
+    set_target_temperature_action:
+      - lambda: |-
+          id(zone3_setpoint_number).make_call().set_value(x).perform();
+    supported_presets: [COMFORT, ECO, NONE]
+    preset_lambda: |-
+      int st = id(dd_zone3_status_raw) & 0xFF;
+      if (st & 0x40) return std::string("COMFORT");
+      if (st & 0x80) return std::string("ECO");
+      if (st & 0x04) return std::string("NONE");
+      return {};
+    set_preset_action:
+      - lambda: |-
+          bool cool = (id(operating_mode_reported) == 2);
+          int raw;
+          if (x == "COMFORT") raw = cool ? id(dominus_comfort_cool_z3_raw) : id(dominus_comfort_heat_z3_raw);
+          else if (x == "ECO") raw = cool ? id(dominus_eco_cool_z3_raw) : id(dominus_eco_heat_z3_raw);
+          else return;
+          id(zone3_setpoint_number).make_call().set_value(raw / 10.0f).perform();
 
 interval:
-  # v118 last-writer-wins delta-sync (replaces v65 unconditional raw=thermostat).
-  # First tick: init the thermostats from the saved setpoint + store thermo_last = raw.
-  # Next ticks, per setpoint:
-  #   1) target != thermo_last  -> user MOVED the thermostat -> raw = target (thermostat wins), publish slider.
-  #   2) else if raw != target  -> raw changed by slider/bus -> best-effort sync the thermostat
-  #      (make_call; retried each tick until target catches up). raw is NOT reverted.
-  # Key: the loop no longer forces raw=thermostat unconditionally -> a slider/Dominus change holds on the
-  # bus even if make_call does not visually update the thermostat.
-  - interval: 1s
-    then:
-      - lambda: |-
-          static bool first = true;
-          if (first) {
-            first = false;
-            id(co_thermostat).make_call().set_target_temperature_low(id(zone1_setpoint_raw) / 10.0f).set_target_temperature(id(zone1_setpoint_raw) / 10.0f).perform();
-            id(cwu_thermostat).make_call().set_target_temperature_low(id(cwu_setpoint_raw) / 10.0f).set_target_temperature(id(cwu_setpoint_raw) / 10.0f).perform();
-            id(co_thermostat_2).make_call().set_target_temperature_low(id(zone2_setpoint_raw) / 10.0f).set_target_temperature(id(zone2_setpoint_raw) / 10.0f).perform();  // v96
-            id(co_thermostat_3).make_call().set_target_temperature_low(id(zone3_setpoint_raw) / 10.0f).set_target_temperature(id(zone3_setpoint_raw) / 10.0f).perform();  // v96
-            id(zone1_thermo_last) = id(zone1_setpoint_raw);
-            id(cwu_thermo_last)   = id(cwu_setpoint_raw);
-            id(zone2_thermo_last) = id(zone2_setpoint_raw);
-            id(zone3_thermo_last) = id(zone3_setpoint_raw);
-            return;
-          }
-          // --- Zone 1 (CH) ---
-          {
-            int ti = (int) roundf(id(co_thermostat).target_temperature_low * 10.0f);
-            if (ti != id(zone1_thermo_last)) {
-              id(zone1_setpoint_raw) = ti; id(zone1_setpoint_number).publish_state(ti / 10.0f); id(zone1_thermo_last) = ti;
-            } else if (id(zone1_setpoint_raw) != ti) {
-              id(co_thermostat).make_call().set_target_temperature_low(id(zone1_setpoint_raw) / 10.0f).set_target_temperature(id(zone1_setpoint_raw) / 10.0f).perform();
-            }
-          }
-          // --- DHW ---
-          {
-            int ti = (int) roundf(id(cwu_thermostat).target_temperature_low * 10.0f);
-            if (ti != id(cwu_thermo_last)) {
-              id(cwu_setpoint_raw) = ti; id(cwu_setpoint_number).publish_state(ti / 10.0f); id(cwu_thermo_last) = ti;
-            } else if (id(cwu_setpoint_raw) != ti) {
-              id(cwu_thermostat).make_call().set_target_temperature_low(id(cwu_setpoint_raw) / 10.0f).set_target_temperature(id(cwu_setpoint_raw) / 10.0f).perform();
-            }
-          }
-          // --- Zone 2 (CH) ---
-          {
-            int ti = (int) roundf(id(co_thermostat_2).target_temperature_low * 10.0f);
-            if (ti != id(zone2_thermo_last)) {
-              id(zone2_setpoint_raw) = ti; id(zone2_setpoint_number).publish_state(ti / 10.0f); id(zone2_thermo_last) = ti;
-            } else if (id(zone2_setpoint_raw) != ti) {
-              id(co_thermostat_2).make_call().set_target_temperature_low(id(zone2_setpoint_raw) / 10.0f).set_target_temperature(id(zone2_setpoint_raw) / 10.0f).perform();
-            }
-          }
-          // --- Zone 3 (CH) ---
-          {
-            int ti = (int) roundf(id(co_thermostat_3).target_temperature_low * 10.0f);
-            if (ti != id(zone3_thermo_last)) {
-              id(zone3_setpoint_raw) = ti; id(zone3_setpoint_number).publish_state(ti / 10.0f); id(zone3_thermo_last) = ti;
-            } else if (id(zone3_setpoint_raw) != ti) {
-              id(co_thermostat_3).make_call().set_target_temperature_low(id(zone3_setpoint_raw) / 10.0f).set_target_temperature(id(zone3_setpoint_raw) / 10.0f).perform();
-            }
-          }
-
   - interval: 10ms
     then:
       - lambda: |-
@@ -4048,15 +4036,8 @@ interval:
               ESP_LOGE("dd_rs485", "BEZPIECZNIK v96: zablokowano TX na 0x1E (maszynownia) label=%s - emulator nie nadaje na adres 30", label);
               return;
             }
-            // v48 Isolated: shared function for emu29; Dominus 0x33 in this version has manual TX only.
-            // LOW = RX/idle, HIGH = TX. At 9600 8E1 a 9-byte frame takes ~10.3 ms, so we hold DE ~12 ms.
-            // No delay() before TX; just a short DE pre-drive so the transceiver switches direction.
-            gpio_set_level(GPIO_NUM_23, 1);
-            delayMicroseconds(120);
+            // DE handled by the UART hardware (flow_control_pin): queue the frame and return, no busy-wait.
             id(dd_uart).write_array(data.data(), data.size());
-            id(dd_uart).flush();
-            delayMicroseconds(12000);
-            gpio_set_level(GPIO_NUM_23, 0);
             id(dd_last_tx_ms) = millis();
             id(dd_emu_29_auto_tx_count)++;
             id(dd_emu_29_auto_tx_last_ms) = id(dd_last_tx_ms);
@@ -4200,13 +4181,9 @@ interval:
             // v53 (delay(22) yield) and v54 (delayMicroseconds(22000)) had a pre-delay and the frames
             // never reached the bus -> the pre-delay broke transmission. Panel 0x29 replies IMMEDIATELY
             // and the boiler accepts it - so 0x33 also replies immediately.
-            // gpio HIGH -> short pre-drive -> write+flush -> hold ~ frame time -> gpio LOW.
-            gpio_set_level(GPIO_NUM_23, 1);
-            delayMicroseconds(800);
+            // DE handled by the UART hardware (flow_control_pin): no pre-drive, no flush, no tail. The hardware
+            // asserts DE right before the start bit, so there is still no delay before TX, as required above.
             id(dd_uart).write_array(data.data(), data.size());
-            id(dd_uart).flush();
-            delayMicroseconds(15000);
-            gpio_set_level(GPIO_NUM_23, 0);
 
             id(dd_last_tx_ms) = millis();
             id(dd_emu_33_ack_count)++;
@@ -4554,8 +4531,10 @@ interval:
                   }
                 }
               }
-              // 2300 (boiler -> panel) = boiler clock [day of week 3b][hour 5b][minute 8b], 1 = Mon .. 7 = Sun (CET, no DST)
-              if (addr == 0x29 && kind == 'W' && reg == 2300) {
+              // 2300 = boiler clock [day of week 3b][hour 5b][minute 8b], 1 = Mon .. 7 = Sun (CET, no DST).
+              // Any frame on 0x29: a boiler WRITE, or the physical panel's READ reply (the boiler also reads 2300 from
+              // the panel - the emulator serves it). Some setups only carry the READ reply.
+              if (addr == 0x29 && (kind == 'W' || kind == 'R') && reg == 2300) {
                 static int last2300 = -99999;
                 if (value != last2300) {
                   last2300 = value;
@@ -4644,11 +4623,10 @@ interval:
             // 0x33 usually changes first, 0x29 is the copy/execution.
             // ------------------------------------------------------------
             if ((addr == 0x29 || addr == 0x33) && reg == REG_MODE) {
-              // v57: the boiler WRITES BACK the current mode -> this is the REPORTED state (for display).
-              // the REQUESTED mode (operating_mode_raw, returned on READ 2000) is OVERWRITTEN only until
-              // the user picks a mode in HA (boiler state adoption at startup, no forcing).
+              // The boiler writes back the current mode (reported state). A change made elsewhere (panel) is
+              // adopted as the mode the Dominus serves; HA commands and stale echoes are arbitrated (lww_guard.h).
               id(operating_mode_reported) = value;
-              if (!id(mode_user_set)) {
+              if (lww::adopt(lww::OPERATING_MODE, "operating_mode", source, addr, id(operating_mode_raw), value)) {
                 id(operating_mode_raw) = value;
               }
 
@@ -4692,7 +4670,7 @@ interval:
             if (reg == REG_ZONE1_SETPOINT) {
               if (addr == 0x2A) { if (value != id(zone2_setpoint_last_bus)) { id(zone2_setpoint_raw) = value; id(zone2_setpoint_number).publish_state(value / 10.0f); } id(zone2_setpoint_last_bus) = value; }  // v118 last-writer-wins
               else if (addr == 0x2B) { if (value != id(zone3_setpoint_last_bus)) { id(zone3_setpoint_raw) = value; id(zone3_setpoint_number).publish_state(value / 10.0f); } id(zone3_setpoint_last_bus) = value; }  // v118 last-writer-wins
-              else { if (value != id(zone1_setpoint_last_bus)) { id(zone1_setpoint_raw) = value; id(zone1_setpoint_number).publish_state(value / 10.0f); id(co_thermostat).make_call().set_target_temperature_low(value / 10.0f).set_target_temperature(value / 10.0f).perform(); } id(zone1_setpoint_last_bus) = value; }  // v117 last-writer-wins
+              else if (lww::adopt(lww::ZONE1_SETPOINT, "zone1_setpoint", source, addr, id(zone1_setpoint_raw), value)) { id(zone1_setpoint_raw) = value; id(zone1_setpoint_number).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X setpoint PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -4700,7 +4678,7 @@ interval:
             if (reg == REG_ZONE1_OFFSET || reg == REG_ZONE1_OFFSET_COPY) {
               if (addr == 0x2A) { id(zone2_offset_raw) = value; id(zone2_offset_number).publish_state(value / 10.0f); }
               else if (addr == 0x2B) { id(zone3_offset_raw) = value; id(zone3_offset_number).publish_state(value / 10.0f); }
-              else { if (value != id(zone1_offset_last_bus)) { id(zone1_offset_raw) = value; id(zone1_offset_number).publish_state(value / 10.0f); } id(zone1_offset_last_bus) = value; }  // v117 last-writer-wins
+              else if (lww::adopt(lww::ZONE1_OFFSET, "zone1_offset", source, addr, id(zone1_offset_raw), value)) { id(zone1_offset_raw) = value; id(zone1_offset_number).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X offset PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -4708,18 +4686,21 @@ interval:
             // ------------------------------------------------------------
             // DHW / external
             // ------------------------------------------------------------
-            if (reg == REG_DHW_SETPOINT || reg == REG_DHW_SETPOINT_COPY_1 || reg == REG_DHW_SETPOINT_COPY_2 || reg == REG_DHW_SETPOINT_COPY_3) {
-              // v1.2.0 ANTI-LEGIONELLA FIX: adopt ONLY device replies (READ: Dominus 0x33 / physical panel 0x29).
-              // A boiler WRITE (e.g. 3015 "DHW setpoint" to the panel) is the boiler's ACTIVE setpoint - 60 C during the
-              // anti-legionella cycle. Adopting it made the emulator (as the panel) feed 60 C back -> setpoint stuck at 60.
-              bool cwu_from_device = (source[0] == 'R');
-              if (cwu_from_device && value != id(cwu_setpoint_last_bus)) {  // v117 last-writer-wins
+            if (reg == REG_DHW_SETPOINT_COPY_1 || reg == REG_DHW_SETPOINT_COPY_2 || reg == REG_DHW_SETPOINT_COPY_3) {
+              // Copies (2291/2292/3015) are never adopted. They lag the master 2095 during propagation (adopting them
+              // made the HA value flip 57 -> 55 -> 57), and 3015 is the boiler's ACTIVE setpoint - 60 C during the
+              // anti-legionella cycle (v1.2.0 fix: adopting it left the setpoint stuck at 60).
+              ESP_LOGD("dd_value", "%s DHW setpoint copy PDU %u = %d (ignored)", source, reg, value);
+              return;
+            }
+            if (reg == REG_DHW_SETPOINT) {
+              // Master DHW setpoint 2095: arbitrated like the other served registers (lww_guard.h). A change made on
+              // the panel reaches the Dominus as a boiler write, so writes are adopted too.
+              if (lww::adopt(lww::DHW_SETPOINT, "dhw_setpoint", source, addr, id(cwu_setpoint_raw), value)) {
                 id(cwu_setpoint_raw) = value;
                 id(cwu_setpoint_number).publish_state(value / 10.0f);
-                id(cwu_thermostat).make_call().set_target_temperature_low(value / 10.0f).set_target_temperature(value / 10.0f).perform();
               }
-              if (cwu_from_device) id(cwu_setpoint_last_bus) = value;
-              ESP_LOGI("dd_value", "%s CWU setpoint/copy PDU %u = %d / %.1f°C", source, reg, value, value / 10.0f);
+              ESP_LOGI("dd_value", "%s DHW setpoint PDU %u = %d / %.1f°C", source, reg, value, value / 10.0f);
               return;
             }
 
@@ -4743,7 +4724,7 @@ interval:
             if (reg == REG_COMFORT_HEAT) {
               if (addr == 0x2A) { id(dominus_comfort_heat_z2_raw) = value; id(number_dominus_comfort_heat_z2).publish_state(value / 10.0f); }
               else if (addr == 0x2B) { id(dominus_comfort_heat_z3_raw) = value; id(number_dominus_comfort_heat_z3).publish_state(value / 10.0f); }
-              else { if (value != id(dominus_comfort_heat_last_bus)) { id(dominus_comfort_heat_raw) = value; id(number_dominus_comfort_heat).publish_state(value / 10.0f); } id(dominus_comfort_heat_last_bus) = value; }  // v117 last-writer-wins
+              else if (lww::adopt(lww::COMFORT_HEAT, "dominus_comfort_heat", source, addr, id(dominus_comfort_heat_raw), value)) { id(dominus_comfort_heat_raw) = value; id(number_dominus_comfort_heat).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Comfort Heat PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -4751,7 +4732,7 @@ interval:
             if (reg == REG_ECO_HEAT) {
               if (addr == 0x2A) { id(dominus_eco_heat_z2_raw) = value; id(number_dominus_eco_heat_z2).publish_state(value / 10.0f); }
               else if (addr == 0x2B) { id(dominus_eco_heat_z3_raw) = value; id(number_dominus_eco_heat_z3).publish_state(value / 10.0f); }
-              else { if (value != id(dominus_eco_heat_last_bus)) { id(dominus_eco_heat_raw) = value; id(number_dominus_eco_heat).publish_state(value / 10.0f); } id(dominus_eco_heat_last_bus) = value; }  // v117 last-writer-wins
+              else if (lww::adopt(lww::ECO_HEAT, "dominus_eco_heat", source, addr, id(dominus_eco_heat_raw), value)) { id(dominus_eco_heat_raw) = value; id(number_dominus_eco_heat).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Eco Heat PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -4759,7 +4740,7 @@ interval:
             if (reg == REG_COMFORT_COOL) {
               if (addr == 0x2A) { id(dominus_comfort_cool_z2_raw) = value; id(number_dominus_comfort_cool_z2).publish_state(value / 10.0f); }
               else if (addr == 0x2B) { id(dominus_comfort_cool_z3_raw) = value; id(number_dominus_comfort_cool_z3).publish_state(value / 10.0f); }
-              else { if (value != id(dominus_comfort_cool_last_bus)) { id(dominus_comfort_cool_raw) = value; id(number_dominus_comfort_cool).publish_state(value / 10.0f); } id(dominus_comfort_cool_last_bus) = value; }  // v117 last-writer-wins
+              else if (lww::adopt(lww::COMFORT_COOL, "dominus_comfort_cool", source, addr, id(dominus_comfort_cool_raw), value)) { id(dominus_comfort_cool_raw) = value; id(number_dominus_comfort_cool).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Comfort Cool PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -4767,7 +4748,7 @@ interval:
             if (reg == REG_ECO_COOL_COPY || reg == REG_ECO_COOL) {
               if (addr == 0x2A) { id(dominus_eco_cool_z2_raw) = value; id(number_dominus_eco_cool_z2).publish_state(value / 10.0f); }
               else if (addr == 0x2B) { id(dominus_eco_cool_z3_raw) = value; id(number_dominus_eco_cool_z3).publish_state(value / 10.0f); }
-              else { if (value != id(dominus_eco_cool_last_bus)) { id(dominus_eco_cool_raw) = value; id(number_dominus_eco_cool).publish_state(value / 10.0f); } id(dominus_eco_cool_last_bus) = value; }  // v117 last-writer-wins
+              else if (lww::adopt(lww::ECO_COOL, "dominus_eco_cool", source, addr, id(dominus_eco_cool_raw), value)) { id(dominus_eco_cool_raw) = value; id(number_dominus_eco_cool).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Eco Cool PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -4775,7 +4756,7 @@ interval:
             if (reg == REG_HUMIDITY) {
               if (addr == 0x2A) { id(dominus_humidity_z2_raw) = value; id(number_dominus_humidity_z2).publish_state(value); }
               else if (addr == 0x2B) { id(dominus_humidity_z3_raw) = value; id(number_dominus_humidity_z3).publish_state(value); }
-              else { if (value != id(dominus_humidity_last_bus)) { id(dominus_humidity_raw) = value; id(number_dominus_humidity).publish_state(value); } id(dominus_humidity_last_bus) = value; }  // v117 last-writer-wins
+              else if (lww::adopt(lww::HUMIDITY, "dominus_humidity", source, addr, id(dominus_humidity_raw), value)) { id(dominus_humidity_raw) = value; id(number_dominus_humidity).publish_state(value); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Umidity PDU %u = %d%%", source, addr, reg, value);
               return;
             }
@@ -4783,7 +4764,7 @@ interval:
             if (reg == REG_SET_FLOW) {
               if (addr == 0x2A) { id(dominus_set_flow_z2_raw) = value; id(number_dominus_set_flow_z2).publish_state(value / 10.0f); }
               else if (addr == 0x2B) { id(dominus_set_flow_z3_raw) = value; id(number_dominus_set_flow_z3).publish_state(value / 10.0f); }
-              else { if (value != id(dominus_set_flow_last_bus)) { id(dominus_set_flow_raw) = value; id(number_dominus_set_flow).publish_state(value / 10.0f); } id(dominus_set_flow_last_bus) = value; }  // v117 last-writer-wins
+              else if (lww::adopt(lww::SET_FLOW, "dominus_set_flow", source, addr, id(dominus_set_flow_raw), value)) { id(dominus_set_flow_raw) = value; id(number_dominus_set_flow).publish_state(value / 10.0f); }  // arbitrated (lww_guard.h)
               ESP_LOGI("dd_value", "%s addr=0x%02X Set Flow PDU %u = %d / %.1f°C", source, addr, reg, value, value / 10.0f);
               return;
             }
@@ -4833,6 +4814,60 @@ interval:
             if (addr == 0x2A && reg == 3042) { id(pdu_2a_version_raw) = value; id(sensor_panel2_version).publish_state(value / 100.0f); return; }
             if (addr == 0x2B && reg == 3042) { id(pdu_2b_version_raw) = value; id(sensor_panel3_version).publish_state(value / 100.0f); return; }
 
+            // FIX chrono: the boiler propagates schedule changes made on another device (e.g. the physical panel)
+            // by WRITING them to 0x33. Before, these writes were dropped: the emulator kept serving the old HA values
+            // and the boiler reverted the panel. Last-writer-wins per register (like the v117 setpoints): adopt a bus
+            // value only when it differs from the last one seen on the bus, so periodic re-writes of an old value
+            // can't undo a fresh HA change. Hi byte bits 0xE0 = "modified" flag set by the panel -> masked.
+            if (addr == 0x33 && (func == 0x06 || func == 0x10) && reg >= 2310 && reg <= 2496) {
+              static int chrono_last_bus[187];
+              static bool chrono_init = false;
+              if (!chrono_init) { for (auto &v : chrono_last_bus) v = INT32_MIN; chrono_init = true; }
+              int &last = chrono_last_bus[reg - 2310];
+              if (value == last) return;
+              last = value;
+
+              if (reg <= 2347 && (reg % 10) <= 7) {
+                datetime::TimeEntity *cal[4][8] = {
+                  {id(dt_cal1_f1_on), id(dt_cal1_f1_off), id(dt_cal1_f2_on), id(dt_cal1_f2_off), id(dt_cal1_f3_on), id(dt_cal1_f3_off), id(dt_cal1_f4_on), id(dt_cal1_f4_off)},
+                  {id(dt_cal2_f1_on), id(dt_cal2_f1_off), id(dt_cal2_f2_on), id(dt_cal2_f2_off), id(dt_cal2_f3_on), id(dt_cal2_f3_off), id(dt_cal2_f4_on), id(dt_cal2_f4_off)},
+                  {id(dt_cal3_f1_on), id(dt_cal3_f1_off), id(dt_cal3_f2_on), id(dt_cal3_f2_off), id(dt_cal3_f3_on), id(dt_cal3_f3_off), id(dt_cal3_f4_on), id(dt_cal3_f4_off)},
+                  {id(dt_cal4_f1_on), id(dt_cal4_f1_off), id(dt_cal4_f2_on), id(dt_cal4_f2_off), id(dt_cal4_f3_on), id(dt_cal4_f3_off), id(dt_cal4_f4_on), id(dt_cal4_f4_off)}
+                };
+                uint8_t hh = ((uint16_t) value >> 8) & 0x1F;
+                uint8_t mm = (uint16_t) value & 0xFF;
+                if (hh > 23 || mm > 59) return;
+                datetime::TimeEntity *t = cal[(reg - 2310) / 10][(reg - 2310) % 10];
+                if (t->hour != hh || t->minute != mm) {
+                  auto call = t->make_call();
+                  call.set_hour(hh);
+                  call.set_minute(mm);
+                  call.set_second(0);
+                  call.perform();
+                  ESP_LOGW("dd_chrono", "BUS->HA PDU %u (cal%d range%d %s) = %02u:%02u", reg,
+                           (reg - 2310) / 10 + 1, ((reg - 2310) % 10) / 2 + 1, ((reg % 2) == 0) ? "ON" : "OFF", hh, mm);
+                }
+                return;
+              }
+
+              // Day -> calendar assignments: Zone 1 (2410-2416), Zone 2 (2420-2426), Zone 3 (2430-2436), DHW (2490-2496).
+              select::Select *days = nullptr;
+              if (reg >= 2410 && reg <= 2416) { select::Select *s[7] = {id(sel_weekday_1), id(sel_weekday_2), id(sel_weekday_3), id(sel_weekday_4), id(sel_weekday_5), id(sel_weekday_6), id(sel_weekday_7)}; days = s[reg - 2410]; }
+              else if (reg >= 2420 && reg <= 2426) { select::Select *s[7] = {id(sel_weekday_z2_1), id(sel_weekday_z2_2), id(sel_weekday_z2_3), id(sel_weekday_z2_4), id(sel_weekday_z2_5), id(sel_weekday_z2_6), id(sel_weekday_z2_7)}; days = s[reg - 2420]; }
+              else if (reg >= 2430 && reg <= 2436) { select::Select *s[7] = {id(sel_weekday_z3_1), id(sel_weekday_z3_2), id(sel_weekday_z3_3), id(sel_weekday_z3_4), id(sel_weekday_z3_5), id(sel_weekday_z3_6), id(sel_weekday_z3_7)}; days = s[reg - 2430]; }
+              else if (reg >= 2490 && reg <= 2496) { select::Select *s[7] = {id(sel_dhw_weekday_1), id(sel_dhw_weekday_2), id(sel_dhw_weekday_3), id(sel_dhw_weekday_4), id(sel_dhw_weekday_5), id(sel_dhw_weekday_6), id(sel_dhw_weekday_7)}; days = s[reg - 2490]; }
+              if (days != nullptr && value >= 1 && value <= 4) {
+                auto cur = days->active_index();
+                if (!cur.has_value() || (int) cur.value() != value - 1) {
+                  auto call = days->make_call();
+                  call.set_index(value - 1);
+                  call.perform();
+                  ESP_LOGW("dd_chrono", "BUS->HA PDU %u (day -> calendar) = Calendar %d", reg, value);
+                }
+              }
+              return;
+            }
+
             if (is_known_pdu(addr, reg)) {
               ESP_LOGD("dd_known", "%s known addr=0x%02X PDU %u = %d / 0x%04X", source, addr, reg, value, (uint16_t) value);
               return;
@@ -4879,6 +4914,7 @@ interval:
 
             if (!crc_ok(frame)) {
               id(dd_last_crc_bad_ms) = millis();
+              id(dd_crc_bad_count)++;
               rx.erase(rx.begin());
               continue;
             }
@@ -4933,8 +4969,16 @@ interval:
               }
               send_emu33_write10_ack(start, count);
               emu33_write10_ack_pre_sent = true;
+              // FIX: the ACK is already queued to the UART, so the payload can be processed now. Before, this fast
+              // path dropped every FC16 write to 0x33 (2015-2017 setpoint/offset, 2214-2218, schedules 2310-2496,
+              // ...): the boiler propagates changes made on another device (e.g. the physical panel) by writing them
+              // to the Dominus, the emulator kept serving the old values and the boiler reverted the change.
+              for (int i = 0; i < values && (8 + i * 2) < (int) len - 2; i++) {
+                uint16_t uv = ((uint16_t) frame[7 + i * 2] << 8) | frame[8 + i * 2];
+                handle_pdu(0x33, 0x10, start + i, (int16_t) uv, "WRITE10");
+              }
               // v56: KEY - like the 0x29 fast-path we continue IMMEDIATELY. The 0x29 path worked,
-              // tor 0x33 (v52-v55) NIE - jedyna strukturalna roznica to brak tego continue:
+              // the 0x33 path (v52-v55) did NOT - the only structural difference was this missing continue:
               // 0x33 went on through heavy processing of the same frame in the RX loop, which
               // apparently blocked the actual transmission. Here we exit right after the ACK.
               continue;
@@ -5005,7 +5049,10 @@ interval:
 
               // v93: online = a PHYSICAL device REPLIED (not our query).
               if (addr == 0x33) id(dd_last_33_read_ms) = millis();
-              else if (addr == 0x29) id(dd_last_29_read_ms) = millis();
+              else if (addr == 0x29) {
+                id(dd_last_29_read_ms) = millis();
+                lww::panel_reply();  // starts the panel warm-up window after a reconnect/boot (lww_guard.h)
+              }
               else if (addr == 0x2A) id(dd_last_2a_read_ms) = millis();
               else if (addr == 0x2B) id(dd_last_2b_read_ms) = millis();
 
