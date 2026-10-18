@@ -2,6 +2,12 @@
 
 🇬🇧 [English](README.md) | 🇵🇱 Polski
 
+<p align="center">
+  <img src="https://img.shields.io/github/v/tag/jotuera/immergas-magis-pro-combo-dd-modbus?label=version&color=blue" alt="Wersja">
+  <img src="https://img.shields.io/badge/platform-ESP32-41BDF5.svg" alt="ESP32">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="Licencja: MIT"></a>
+</p>
+
 Steruj kotłem **Immergas Magis Combo** z **Home Assistanta**, **emulując zdalny sterownik Dominus i panele stref** na magistrali **D+/D- (Modbus RS485)** — za pomocą **M5Stack Atom + ESPHome**. Bez chmury, bez oryginalnego sterownika Dominus.
 
 Kocioł jest Modbusowym **masterem**; to urządzenie jest **slave'em**, który odpowiada jako Dominus (`0x33`) i/lub panele stref (`0x29` / `0x2A` / `0x2B`). Podaje kotłowi temperaturę i wilgotność pokojową z **dowolnego sensora Home Assistanta** i udostępnia ustawienia panelu/Dominusa jako encje HA.
