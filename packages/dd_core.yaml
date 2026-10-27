@@ -7,7 +7,7 @@
 substitutions:
   dd_author: "JoTu"
   dd_github_url: "https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus"
-  dd_project_version: "2.0.1"
+  dd_project_version: "2.0.2"
   # RS485 pins (M5Stack Atom + RS485 unit). Override in your main YAML if your wiring differs.
   dd_uart_tx_pin: GPIO26
   dd_uart_rx_pin: GPIO32
@@ -62,6 +62,17 @@ esphome:
               id(dd_migrated_v2) = true;
               ESP_LOGW("dd_migrate", "v2.0.0: restored values of 34 globals copied from the v1.x ids");
             }
+    # v2.0.2: the source selects restore their option, but set_action does not run on restore - run it once
+    # so the source index and the value sent to the boiler follow the restored option (issue #2).
+    - priority: 590
+      then:
+        - lambda: |-
+            for (auto *s : std::vector<select::Select *>{id(dd_temp_source_select), id(dd_hum_source_select),
+                                                       id(dd_temp_source_z2_select), id(dd_temp_source_z3_select),
+                                                       id(dd_hum_source_z2_select), id(dd_hum_source_z3_select)}) {
+              auto idx = s->active_index();
+              if (idx.has_value()) s->make_call().set_index(*idx).perform();
+            }
     - priority: 800
       then:
         - lambda: |-
@@ -71,10 +82,10 @@ esphome:
 # Components of this project, downloaded from GitHub (nothing to copy next to this YAML):
 #   dd_bus_climate - climate entities backed by the bus state
 #   immergas_dd - shared helpers for the lambdas (HA/bus arbitration, fault texts)
-# @v2.0.1 = this release; @main = latest development version.
+# @v2.0.2 = this release; @main = latest development version.
 
 external_components:
-  - source: github://jotuera/immergas-magis-pro-combo-dd-modbus@v2.0.1
+  - source: github://jotuera/immergas-magis-pro-combo-dd-modbus@v2.0.2
     components: [dd_bus_climate, immergas_dd]
     refresh: 1d
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.0.2
+
+- **Fix ([#2](https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus/issues/2)):** the temperature / humidity
+  source selects of Zones 1-3 kept their choice only until a reboot (then back to the default: Upper floor for
+  Zone 1, Panel for Zones 2/3). They now restore the last option, and on boot it is applied again so the value sent
+  to the boiler comes from the restored source. Entities and names unchanged.
+- README: reported working on the Magis Pro 9 V2.
+
 ## v2.0.1
 
 - `uart:` in `dd_core` is now a list (`- id: dd_uart`), like the tt-bms and f1f2-nasa repos. With the old map form

@@ -12,7 +12,7 @@ Control an **Immergas Magis Combo** boiler from **Home Assistant** by **emulatin
 
 The boiler is the Modbus **master**; this device is a **slave** that answers as the Dominus (`0x33`) and/or the zone panels (`0x29` / `0x2A` / `0x2B`). It feeds the boiler room temperature & humidity from **any Home Assistant sensor** and exposes the panel/Dominus settings as HA entities.
 
-> ⚠️ **Tested only on the Magis Combo V2 (`MPROCOMBOV2`).** The Dominus app supports many Immergas engines (Zeus, Star, VictrixMaior, …) with different register maps — this project targets **Magis Combo only**. Other models may partially work but are untested. Contributions welcome.
+> ⚠️ **Tested on the Magis Combo V2 (`MPROCOMBOV2`)**, and reported working by a user on the **Magis Pro 9 V2** (D+/D- with Dominus / remote panel; gas-generator entities apply to the Combo only). The Dominus app supports many Immergas engines (Zeus, Star, VictrixMaior, …) with different register maps — this project targets **Magis Combo / Magis Pro only**. Other models may partially work but are untested. Contributions welcome.
 
 ## What's new in v2.0.0
 

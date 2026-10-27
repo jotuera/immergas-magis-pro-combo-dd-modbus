@@ -375,6 +375,7 @@ select:
     id: dd_temp_source_z2_select
     icon: mdi:thermometer
     optimistic: true
+    restore_value: true  # v2.0.2: keep the chosen source after a reboot (issue #2)
     entity_category: config
     options:
       - "${t_dd_src_panel}"
@@ -404,6 +405,7 @@ select:
     id: dd_temp_source_z3_select
     icon: mdi:thermometer
     optimistic: true
+    restore_value: true  # v2.0.2: keep the chosen source after a reboot (issue #2)
     entity_category: config
     options:
       - "${t_dd_src_panel}"
@@ -433,6 +435,7 @@ select:
     id: dd_hum_source_z2_select
     icon: mdi:water-percent
     optimistic: true
+    restore_value: true  # v2.0.2: keep the chosen source after a reboot (issue #2)
     entity_category: config
     options:
       - "${t_dd_src_panel}"
@@ -462,6 +465,7 @@ select:
     id: dd_hum_source_z3_select
     icon: mdi:water-percent
     optimistic: true
+    restore_value: true  # v2.0.2: keep the chosen source after a reboot (issue #2)
     entity_category: config
     options:
       - "${t_dd_src_panel}"

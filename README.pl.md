@@ -12,7 +12,7 @@ Steruj kotłem **Immergas Magis Combo** z **Home Assistanta**, **emulując zdaln
 
 Kocioł jest Modbusowym **masterem**; to urządzenie jest **slave'em**, który odpowiada jako Dominus (`0x33`) i/lub panele stref (`0x29` / `0x2A` / `0x2B`). Podaje kotłowi temperaturę i wilgotność pokojową z **dowolnego sensora Home Assistanta** i udostępnia ustawienia panelu/Dominusa jako encje HA.
 
-> ⚠️ **Testowane wyłącznie na Magis Combo V2 (`MPROCOMBOV2`).** Aplikacja Dominus obsługuje wiele silników Immergasa (Zeus, Star, VictrixMaior, …) z różnymi mapami rejestrów — ten projekt celuje **wyłącznie w Magis Combo**. Inne modele mogą działać częściowo, ale nie są testowane. Kontrybucje mile widziane.
+> ⚠️ **Testowane na Magis Combo V2 (`MPROCOMBOV2`)**, a według zgłoszenia użytkownika działa też na **Magis Pro 9 V2** (D+/D- z Dominusem / panelem zdalnym; encje generatora gazowego dotyczą tylko Combo). Aplikacja Dominus obsługuje wiele silników Immergasa (Zeus, Star, VictrixMaior, …) z różnymi mapami rejestrów — ten projekt celuje **wyłącznie w Magis Combo / Magis Pro**. Inne modele mogą działać częściowo, ale nie są testowane. Kontrybucje mile widziane.
 
 ## Co nowego w v2.0.0
 

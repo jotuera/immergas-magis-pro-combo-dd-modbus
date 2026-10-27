@@ -268,7 +268,7 @@ globals:
     type: int
     restore_value: no
     initial_value: '50'
-  # v100: restore_value: no -> after reboot returns to source 4 (Upper floor), consistent with the select's initial_option.
+  # Active source index. Not restored itself: since v2.0.2 the select restores its option and on_boot re-applies it.
   - id: dd_temp_src_idx
     type: int
     restore_value: no
