@@ -171,6 +171,10 @@ Edytuj blok `substitutions:` na początku YAML-a — wskazują na **Twoje** sens
 2. Skieruj źródła w `substitutions:` na swoje sensory HA (patrz wyżej).
 3. Wgraj `immergas-magis-pro-combo-dd-modbus.yaml` przez ESPHome, podłącz RS485 (z rezystorem **120 Ω**), dodaj w Home Assistant.
 
+## Jedno urządzenie na kilka magistral
+
+Pakiety `dd_` mogą działać na jednym ESP32 razem z [tt-bms](https://github.com/jotuera/immergas-magis-pro-combo-tt-bms) i [f1f2-nasa](https://github.com/jotuera/immergas-magis-pro-combo-f1f2-nasa): listy pakietów stoją obok siebie pod jednym `packages:`, a sekcja urządzenia (esp32, wifi, api, logger) jest jedna. Każda magistrala ma własny UART i piny (`dd_uart_tx_pin` / `dd_uart_rx_pin` / `dd_uart_de_pin`); ESP32 ma trzy sprzętowe UART-y, więc logger trzeba z nich zdjąć (`logger: baud_rate: 0` albo `hardware_uart: USB_SERIAL_JTAG` na ESP32-S3). Żeby odróżnić magistrale w Home Assistant, ustaw prefiks nazw, np. `dd_name_prefix: "Immergas DD"` → *Immergas DD - D03 Temperatura zasobnika c.w.u.*
+
 ## Uwagi
 
 - **Wspólne kalendarze:** 4 profile czasowe są wspólne dla wszystkich stref i CWU; tylko przypisanie dzień→kalendarz jest per-strefa (potwierdzone z configu aplikacji Dominus).

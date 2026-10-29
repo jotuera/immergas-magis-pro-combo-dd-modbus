@@ -171,6 +171,10 @@ Edit the `substitutions:` block at the top of the YAML — these point to **your
 2. Point the `substitutions:` sources to your HA sensors (see above).
 3. Flash `immergas-magis-pro-combo-dd-modbus.yaml` with ESPHome, wire the RS485 (with the **120 Ω** resistor), adopt in Home Assistant.
 
+## Running on one device with the other buses
+
+The `dd_` packages can share one ESP32 with [tt-bms](https://github.com/jotuera/immergas-magis-pro-combo-tt-bms) and [f1f2-nasa](https://github.com/jotuera/immergas-magis-pro-combo-f1f2-nasa): put the package lists next to each other under one `packages:` and keep one device section (esp32, wifi, api, logger). Each bus needs its own UART and pins (`dd_uart_tx_pin` / `dd_uart_rx_pin` / `dd_uart_de_pin`); an ESP32 has three hardware UARTs, so move the logger off them (`logger: baud_rate: 0`, or `hardware_uart: USB_SERIAL_JTAG` on an ESP32-S3). To tell the buses apart in Home Assistant, set a name prefix per bus, e.g. `dd_name_prefix: "Immergas DD"` → *Immergas DD - D03 DHW tank temperature*.
+
 ## Notes
 
 - **Shared calendars:** the 4 time-profiles are shared across all zones and DHW; only the day→calendar assignment is per-zone (confirmed from the Dominus app config).

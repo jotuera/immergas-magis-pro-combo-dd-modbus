@@ -6,7 +6,7 @@
 # setpoints, weekly schedules, operating mode and boiler faults. See README.md for wiring, the register
 # map and setup.
 #
-# Project : jotuera.immergas-magis-pro-combo-dd-modbus  |  v2.0.2
+# Project : jotuera.immergas-magis-pro-combo-dd-modbus  |  v2.1.0
 # Repo    : https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus
 # License : MIT (c) 2026 JoTu
 # Tested  : Magis Combo V2 (MPROCOMBOV2). Other Immergas engines use different register maps - untested.
@@ -17,6 +17,7 @@
 # (packages: below). Keep the list of files complete - the packages depend on each other.
 # Language: pick ONE file from packages/lang/ (dd_en, dd_pl, dd_it). Any single name or text can be overridden in
 # substitutions: below, e.g.  n_dd_zone1_setpoint_number: "Immergas - My setpoint". Setpoint step: dd_setpoint_step: "0.5".
+# Name prefix of all entities: dd_name_prefix: "Immergas" (default) -> e.g. "Immergas DD" on a combined device.
 # File, id and substitution names start with dd_ so this repo can be combined with tt-bms / f1f2-nasa on one device.
 
 substitutions:
@@ -135,7 +136,7 @@ text_sensor:
 packages:
   dd_modbus:
     url: https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus
-    ref: v2.0.2
+    ref: v2.1.0
     refresh: 1d
     files:
       - packages/dd_core.yaml

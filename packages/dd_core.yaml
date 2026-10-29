@@ -7,13 +7,16 @@
 substitutions:
   dd_author: "JoTu"
   dd_github_url: "https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus"
-  dd_project_version: "2.0.2"
+  dd_project_version: "2.1.0"
   # RS485 pins (M5Stack Atom + RS485 unit). Override in your main YAML if your wiring differs.
   dd_uart_tx_pin: GPIO26
   dd_uart_rx_pin: GPIO32
   dd_uart_de_pin: GPIO23
   # Step of the setpoint sliders/climates (C). 0.1 = fine control; 0.5 = like the Dominus app.
   dd_setpoint_step: "0.1"
+  # First part of every entity name ("<prefix> - <name>"). Change it when several Immergas buses share one device,
+  # e.g. dd_name_prefix: "Immergas DD" -> "Immergas DD - D03 ...". Default keeps the names of v2.0.x.
+  dd_name_prefix: "Immergas"
 
 esphome:
   project:
@@ -76,16 +79,16 @@ esphome:
     - priority: 800
       then:
         - lambda: |-
-            // RS485 DE (GPIO23) is driven by the UART hardware (uart: flow_control_pin), not from here.
-            ESP_LOGW("dd_rs485", "RS485 hardware DE on GPIO23; Dominus 0x33 + panels + thermostats + chrono + faults + status ready, fw ${dd_project_version}");
+            // RS485 DE (${dd_uart_de_pin}) is driven by the UART hardware (uart: flow_control_pin), not from here.
+            ESP_LOGW("dd_rs485", "RS485 hardware DE on ${dd_uart_de_pin}; Dominus 0x33 + panels + thermostats + chrono + faults + status ready, fw ${dd_project_version}");
 
 # Components of this project, downloaded from GitHub (nothing to copy next to this YAML):
 #   dd_bus_climate - climate entities backed by the bus state
 #   immergas_dd - shared helpers for the lambdas (HA/bus arbitration, fault texts)
-# @v2.0.2 = this release; @main = latest development version.
+# @v2.1.0 = this release; @main = latest development version.
 
 external_components:
-  - source: github://jotuera/immergas-magis-pro-combo-dd-modbus@v2.0.2
+  - source: github://jotuera/immergas-magis-pro-combo-dd-modbus@v2.1.0
     components: [dd_bus_climate, immergas_dd]
     refresh: 1d
 

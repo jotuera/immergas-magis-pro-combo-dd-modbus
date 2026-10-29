@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.1.0
+
+- New substitution **`dd_name_prefix`** (default `"Immergas"`): the first part of every entity name
+  (`"<prefix> - <name>"`). With the default the names are exactly as in v2.0.x. Set it in the main YAML when the
+  D+/D- packages share one device with tt-bms / f1f2-nasa, e.g. `dd_name_prefix: "Immergas DD"`.
+- The boot log names the configured DE pin (`dd_uart_de_pin`) instead of a fixed GPIO23.
+
 ## v2.0.2
 
 - **Fix ([#2](https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus/issues/2)):** the temperature / humidity
