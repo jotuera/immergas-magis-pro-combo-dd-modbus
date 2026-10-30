@@ -7,7 +7,7 @@
 substitutions:
   dd_author: "JoTu"
   dd_github_url: "https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus"
-  dd_project_version: "2.1.0"
+  dd_project_version: "2.1.1"
   # RS485 pins (M5Stack Atom + RS485 unit). Override in your main YAML if your wiring differs.
   dd_uart_tx_pin: GPIO26
   dd_uart_rx_pin: GPIO32
@@ -85,10 +85,10 @@ esphome:
 # Components of this project, downloaded from GitHub (nothing to copy next to this YAML):
 #   dd_bus_climate - climate entities backed by the bus state
 #   immergas_dd - shared helpers for the lambdas (HA/bus arbitration, fault texts)
-# @v2.1.0 = this release; @main = latest development version.
+# @v2.1.1 = this release; @main = latest development version.
 
 external_components:
-  - source: github://jotuera/immergas-magis-pro-combo-dd-modbus@v2.1.0
+  - source: github://jotuera/immergas-magis-pro-combo-dd-modbus@v2.1.1
     components: [dd_bus_climate, immergas_dd]
     refresh: 1d
 

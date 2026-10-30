@@ -896,6 +896,30 @@ interval:
           static const uint16_t REG_DHW_SETPOINT_COPY_3     = 3015;
           static const uint16_t REG_DHW_TEMP                = 3016;
 
+          // v2.1.1 chrono learn-on-boot: after a boot the schedule entities can hold their defaults (new device,
+          // renamed entity = nothing restored -> Calendar 1 on every day). The boiler READS the schedule from the
+          // emulated panel and adopts it, so serving those defaults overwrote the real schedule (DHW all day).
+          // For CHRONO_LEARN_MS after boot a schedule register is served as -1 ("not set", like a fresh panel)
+          // until its real value is seen on the bus: a READ reply from a physical device (Dominus 0x33) or a
+          // boiler write. Registers nobody reports in the window fall back to the HA value (old behaviour).
+          static const uint32_t CHRONO_LEARN_MS = 120000;
+          static bool chrono_learned[187] = {false};  // index = reg - 2310
+          static bool chrono_learn_over = false;
+          auto chrono_is_schedule_reg = [](uint16_t reg) -> bool {
+            if (reg >= 2310 && reg <= 2347) return (reg % 10) <= 7;
+            return (reg >= 2410 && reg <= 2416) || (reg >= 2420 && reg <= 2426) ||
+                   (reg >= 2430 && reg <= 2436) || (reg >= 2490 && reg <= 2496);
+          };
+          auto chrono_learning = [&]() -> bool {
+            if (chrono_learn_over) return false;
+            if (millis() < CHRONO_LEARN_MS) return true;
+            chrono_learn_over = true;
+            int n = 0;
+            for (bool l : chrono_learned) if (l) n++;
+            ESP_LOGW("dd_chrono", "Schedule learn window over: %d registers learned from the bus, the rest served from HA", n);
+            return false;
+          };
+
           auto calc_crc = [](const std::vector<uint8_t> &data) -> uint16_t {
             uint16_t crc = 0xFFFF;
             for (uint8_t b : data) {
@@ -1020,7 +1044,7 @@ interval:
           // 2310-2347 = 4 profile dzienne cal1-4 (po 4 fascia on/off), 2410-2416 = profil
           // per weekday. Register time: hi byte = hour, lo byte = minute
           // (06:00 -> 6*256 = 1536). Serwowane identycznie dla 0x33 i 0x29 z tych encji.
-          auto chrono_reg_value = [&](uint16_t reg) -> int {
+          auto chrono_ha_value = [&](uint16_t reg) -> int {
             switch (reg) {
               case 2310: return id(dd_dt_cal1_f1_on).hour * 256 + id(dd_dt_cal1_f1_on).minute;
               case 2311: return id(dd_dt_cal1_f1_off).hour * 256 + id(dd_dt_cal1_f1_off).minute;
@@ -1084,6 +1108,11 @@ interval:
               case 2496: return (int) id(dd_sel_dhw_weekday_7).active_index().value_or(0) + 1;
               default: return 0;
             }
+          };
+
+          auto chrono_reg_value = [&](uint16_t reg) -> int {
+            if (chrono_is_schedule_reg(reg) && !chrono_learned[reg - 2310] && chrono_learning()) return -1;
+            return chrono_ha_value(reg);
           };
 
           auto emu29_value = [&](uint16_t reg) -> int {
@@ -1619,6 +1648,48 @@ interval:
             return true;
           };
 
+          // Schedule register value -> its HA entity (calendar on/off time, or day -> calendar select).
+          // Hi byte bits 0xE0 = "modified" flag set by the panel -> masked. False = not a valid value.
+          auto chrono_apply = [&](uint16_t reg, int value, const char *how) -> bool {
+            uint16_t v = (uint16_t) value & 0x1FFF;
+            if (reg >= 2310 && reg <= 2347 && (reg % 10) <= 7) {
+              datetime::TimeEntity *cal[4][8] = {
+                {id(dd_dt_cal1_f1_on), id(dd_dt_cal1_f1_off), id(dd_dt_cal1_f2_on), id(dd_dt_cal1_f2_off), id(dd_dt_cal1_f3_on), id(dd_dt_cal1_f3_off), id(dd_dt_cal1_f4_on), id(dd_dt_cal1_f4_off)},
+                {id(dd_dt_cal2_f1_on), id(dd_dt_cal2_f1_off), id(dd_dt_cal2_f2_on), id(dd_dt_cal2_f2_off), id(dd_dt_cal2_f3_on), id(dd_dt_cal2_f3_off), id(dd_dt_cal2_f4_on), id(dd_dt_cal2_f4_off)},
+                {id(dd_dt_cal3_f1_on), id(dd_dt_cal3_f1_off), id(dd_dt_cal3_f2_on), id(dd_dt_cal3_f2_off), id(dd_dt_cal3_f3_on), id(dd_dt_cal3_f3_off), id(dd_dt_cal3_f4_on), id(dd_dt_cal3_f4_off)},
+                {id(dd_dt_cal4_f1_on), id(dd_dt_cal4_f1_off), id(dd_dt_cal4_f2_on), id(dd_dt_cal4_f2_off), id(dd_dt_cal4_f3_on), id(dd_dt_cal4_f3_off), id(dd_dt_cal4_f4_on), id(dd_dt_cal4_f4_off)}
+              };
+              uint8_t hh = v >> 8;
+              uint8_t mm = v & 0xFF;
+              if (hh > 23 || mm > 59) return false;
+              datetime::TimeEntity *t = cal[(reg - 2310) / 10][(reg - 2310) % 10];
+              if (t->hour != hh || t->minute != mm) {
+                auto call = t->make_call();
+                call.set_hour(hh);
+                call.set_minute(mm);
+                call.set_second(0);
+                call.perform();
+                ESP_LOGW("dd_chrono", "%s PDU %u (cal%d range%d %s) = %02u:%02u", how, reg,
+                         (reg - 2310) / 10 + 1, ((reg - 2310) % 10) / 2 + 1, ((reg % 2) == 0) ? "ON" : "OFF", hh, mm);
+              }
+              return true;
+            }
+            select::Select *days = nullptr;
+            if (reg >= 2410 && reg <= 2416) { select::Select *s[7] = {id(dd_sel_weekday_1), id(dd_sel_weekday_2), id(dd_sel_weekday_3), id(dd_sel_weekday_4), id(dd_sel_weekday_5), id(dd_sel_weekday_6), id(dd_sel_weekday_7)}; days = s[reg - 2410]; }
+            else if (reg >= 2420 && reg <= 2426) { select::Select *s[7] = {id(dd_sel_weekday_z2_1), id(dd_sel_weekday_z2_2), id(dd_sel_weekday_z2_3), id(dd_sel_weekday_z2_4), id(dd_sel_weekday_z2_5), id(dd_sel_weekday_z2_6), id(dd_sel_weekday_z2_7)}; days = s[reg - 2420]; }
+            else if (reg >= 2430 && reg <= 2436) { select::Select *s[7] = {id(dd_sel_weekday_z3_1), id(dd_sel_weekday_z3_2), id(dd_sel_weekday_z3_3), id(dd_sel_weekday_z3_4), id(dd_sel_weekday_z3_5), id(dd_sel_weekday_z3_6), id(dd_sel_weekday_z3_7)}; days = s[reg - 2430]; }
+            else if (reg >= 2490 && reg <= 2496) { select::Select *s[7] = {id(dd_sel_dhw_weekday_1), id(dd_sel_dhw_weekday_2), id(dd_sel_dhw_weekday_3), id(dd_sel_dhw_weekday_4), id(dd_sel_dhw_weekday_5), id(dd_sel_dhw_weekday_6), id(dd_sel_dhw_weekday_7)}; days = s[reg - 2490]; }
+            if (days == nullptr || v < 1 || v > 4) return false;
+            auto cur = days->active_index();
+            if (!cur.has_value() || (int) cur.value() != v - 1) {
+              auto call = days->make_call();
+              call.set_index(v - 1);
+              call.perform();
+              ESP_LOGW("dd_chrono", "%s PDU %u (day -> calendar) = Calendar %d", how, reg, v);
+            }
+            return true;
+          };
+
           auto handle_pdu = [&](uint8_t addr, uint8_t func, uint16_t reg, int value, const char *source) {
             // v1.2.0 - decoded registers + optional bus sniffer (before everything else, also before the 0x1E "return").
             {
@@ -2039,6 +2110,19 @@ interval:
             if (addr == 0x2A && reg == 3042) { id(dd_pdu_2a_version_raw) = value; id(dd_sensor_panel2_version).publish_state(value / 100.0f); return; }
             if (addr == 0x2B && reg == 3042) { id(dd_pdu_2b_version_raw) = value; id(dd_sensor_panel3_version).publish_state(value / 100.0f); return; }
 
+            // v2.1.1: learn the real schedule after a boot (CHRONO_LEARN_MS). Sources: a boiler write, or a READ reply
+            // from a physical device - never from an address we emulate (that could be our own echo).
+            if (addr != 0x1E && chrono_is_schedule_reg(reg) && !chrono_learned[reg - 2310] && chrono_learning()) {
+              bool is_write = source[0] == 'W';
+              bool emulated = (addr == 0x29 && emulator_29_enabled()) || (addr == 0x33 && emulator_33_enabled()) ||
+                              (addr == 0x2A && emulator_2a_enabled()) || (addr == 0x2B && emulator_2b_enabled());
+              if ((is_write || !emulated) && chrono_apply(reg, value, "LEARN")) {
+                chrono_learned[reg - 2310] = true;
+                ESP_LOGW("dd_chrono", "LEARN PDU %u = 0x%04X from %s 0x%02X", reg, (uint16_t) value, source, addr);
+              }
+              if (addr != 0x33 || !is_write) return;  // 0x33 writes continue to the last-writer-wins block below
+            }
+
             // FIX chrono: the boiler propagates schedule changes made on another device (e.g. the physical panel)
             // by WRITING them to 0x33. Before, these writes were dropped: the emulator kept serving the old HA values
             // and the boiler reverted the panel. Last-writer-wins per register (like the v117 setpoints): adopt a bus
@@ -2052,44 +2136,7 @@ interval:
               if (value == last) return;
               last = value;
 
-              if (reg <= 2347 && (reg % 10) <= 7) {
-                datetime::TimeEntity *cal[4][8] = {
-                  {id(dd_dt_cal1_f1_on), id(dd_dt_cal1_f1_off), id(dd_dt_cal1_f2_on), id(dd_dt_cal1_f2_off), id(dd_dt_cal1_f3_on), id(dd_dt_cal1_f3_off), id(dd_dt_cal1_f4_on), id(dd_dt_cal1_f4_off)},
-                  {id(dd_dt_cal2_f1_on), id(dd_dt_cal2_f1_off), id(dd_dt_cal2_f2_on), id(dd_dt_cal2_f2_off), id(dd_dt_cal2_f3_on), id(dd_dt_cal2_f3_off), id(dd_dt_cal2_f4_on), id(dd_dt_cal2_f4_off)},
-                  {id(dd_dt_cal3_f1_on), id(dd_dt_cal3_f1_off), id(dd_dt_cal3_f2_on), id(dd_dt_cal3_f2_off), id(dd_dt_cal3_f3_on), id(dd_dt_cal3_f3_off), id(dd_dt_cal3_f4_on), id(dd_dt_cal3_f4_off)},
-                  {id(dd_dt_cal4_f1_on), id(dd_dt_cal4_f1_off), id(dd_dt_cal4_f2_on), id(dd_dt_cal4_f2_off), id(dd_dt_cal4_f3_on), id(dd_dt_cal4_f3_off), id(dd_dt_cal4_f4_on), id(dd_dt_cal4_f4_off)}
-                };
-                uint8_t hh = ((uint16_t) value >> 8) & 0x1F;
-                uint8_t mm = (uint16_t) value & 0xFF;
-                if (hh > 23 || mm > 59) return;
-                datetime::TimeEntity *t = cal[(reg - 2310) / 10][(reg - 2310) % 10];
-                if (t->hour != hh || t->minute != mm) {
-                  auto call = t->make_call();
-                  call.set_hour(hh);
-                  call.set_minute(mm);
-                  call.set_second(0);
-                  call.perform();
-                  ESP_LOGW("dd_chrono", "BUS->HA PDU %u (cal%d range%d %s) = %02u:%02u", reg,
-                           (reg - 2310) / 10 + 1, ((reg - 2310) % 10) / 2 + 1, ((reg % 2) == 0) ? "ON" : "OFF", hh, mm);
-                }
-                return;
-              }
-
-              // Day -> calendar assignments: Zone 1 (2410-2416), Zone 2 (2420-2426), Zone 3 (2430-2436), DHW (2490-2496).
-              select::Select *days = nullptr;
-              if (reg >= 2410 && reg <= 2416) { select::Select *s[7] = {id(dd_sel_weekday_1), id(dd_sel_weekday_2), id(dd_sel_weekday_3), id(dd_sel_weekday_4), id(dd_sel_weekday_5), id(dd_sel_weekday_6), id(dd_sel_weekday_7)}; days = s[reg - 2410]; }
-              else if (reg >= 2420 && reg <= 2426) { select::Select *s[7] = {id(dd_sel_weekday_z2_1), id(dd_sel_weekday_z2_2), id(dd_sel_weekday_z2_3), id(dd_sel_weekday_z2_4), id(dd_sel_weekday_z2_5), id(dd_sel_weekday_z2_6), id(dd_sel_weekday_z2_7)}; days = s[reg - 2420]; }
-              else if (reg >= 2430 && reg <= 2436) { select::Select *s[7] = {id(dd_sel_weekday_z3_1), id(dd_sel_weekday_z3_2), id(dd_sel_weekday_z3_3), id(dd_sel_weekday_z3_4), id(dd_sel_weekday_z3_5), id(dd_sel_weekday_z3_6), id(dd_sel_weekday_z3_7)}; days = s[reg - 2430]; }
-              else if (reg >= 2490 && reg <= 2496) { select::Select *s[7] = {id(dd_sel_dhw_weekday_1), id(dd_sel_dhw_weekday_2), id(dd_sel_dhw_weekday_3), id(dd_sel_dhw_weekday_4), id(dd_sel_dhw_weekday_5), id(dd_sel_dhw_weekday_6), id(dd_sel_dhw_weekday_7)}; days = s[reg - 2490]; }
-              if (days != nullptr && value >= 1 && value <= 4) {
-                auto cur = days->active_index();
-                if (!cur.has_value() || (int) cur.value() != value - 1) {
-                  auto call = days->make_call();
-                  call.set_index(value - 1);
-                  call.perform();
-                  ESP_LOGW("dd_chrono", "BUS->HA PDU %u (day -> calendar) = Calendar %d", reg, value);
-                }
-              }
+              if (chrono_apply(reg, value, "BUS->HA") && chrono_is_schedule_reg(reg)) chrono_learned[reg - 2310] = true;
               return;
             }
 

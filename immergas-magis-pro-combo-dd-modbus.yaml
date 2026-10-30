@@ -6,7 +6,7 @@
 # setpoints, weekly schedules, operating mode and boiler faults. See README.md for wiring, the register
 # map and setup.
 #
-# Project : jotuera.immergas-magis-pro-combo-dd-modbus  |  v2.1.0
+# Project : jotuera.immergas-magis-pro-combo-dd-modbus  |  v2.1.1
 # Repo    : https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus
 # License : MIT (c) 2026 JoTu
 # Tested  : Magis Combo V2 (MPROCOMBOV2). Other Immergas engines use different register maps - untested.
@@ -136,7 +136,7 @@ text_sensor:
 packages:
   dd_modbus:
     url: https://github.com/jotuera/immergas-magis-pro-combo-dd-modbus
-    ref: v2.1.0
+    ref: v2.1.1
     refresh: 1d
     files:
       - packages/dd_core.yaml

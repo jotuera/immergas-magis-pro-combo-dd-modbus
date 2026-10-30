@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.1.1
+
+- **Fix:** a device without restored schedule values (new device, re-created entities) served its defaults to the
+  boiler - Calendar 1 on every day - and the boiler adopted them, overwriting the real schedule (seen as DHW
+  heating all day). For 2 minutes after boot a schedule register (2310-2347, 2410-2436, 2490-2496) is now served as
+  -1 ("not set", like a fresh panel) until its real value is seen on the bus: a READ reply from the physical
+  Dominus 0x33 or a boiler write. Registers nobody reports in that window fall back to the HA value as before.
+  Entities and names unchanged.
+
 ## v2.1.0
 
 - New substitution **`dd_name_prefix`** (default `"Immergas"`): the first part of every entity name
